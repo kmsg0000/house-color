@@ -1,0 +1,42 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'kr.housecolor.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'kr.housecolor.app'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        // 같은 키로 계속 서명해야 나중에 새 버전을 '업데이트'로 설치할 수 있다.
+        // 저장소에 포함된 release.keystore 를 기본으로 쓰고, GitHub 비밀값(KEYSTORE_*)이 있으면 그것을 쓴다.
+        rel {
+            storeFile file(System.getenv('KEYSTORE_PATH') ?: 'release.keystore')
+            storePassword System.getenv('KEYSTORE_PASSWORD') ?: 'housecolor2026'
+            keyAlias System.getenv('KEY_ALIAS') ?: 'housecolor'
+            keyPassword System.getenv('KEY_PASSWORD') ?: 'housecolor2026'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.rel
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.webkit:webkit:1.12.1'
+}

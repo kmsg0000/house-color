@@ -1,0 +1,102 @@
+# GitHub에 올리면 자동으로 APK(안드로이드)와 Windows / Mac 설치파일을 만들어 줍니다.
+# 결과물: 저장소의 [Actions] 탭 → 최근 실행 → 맨 아래 "Artifacts" 에서 내려받기
+#        (또는 [Releases] 의 "latest" 에서도 내려받을 수 있습니다)
+name: 앱 만들기 (APK + PC 설치파일)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: 안드로이드 APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: 웹 앱 파일 넣기
+        run: mkdir -p android/app/src/main/assets && cp web/index.html android/app/src/main/assets/index.html
+      - name: APK 빌드
+        working-directory: android
+        run: gradle assembleRelease --no-daemon
+      - name: 이름 정리
+        run: cp android/app/build/outputs/apk/release/app-release.apk HouseColor.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HouseColor-android-apk
+          path: HouseColor.apk
+
+  windows:
+    name: Windows 설치파일
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 웹 앱 파일 넣기
+        shell: bash
+        run: mkdir -p desktop/app && cp web/index.html desktop/app/index.html
+      - name: 설치파일 빌드
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm install
+          npx electron-builder --win nsis --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HouseColor-windows-setup
+          path: desktop/dist/*.exe
+
+  mac:
+    name: Mac 설치파일
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 웹 앱 파일 넣기
+        run: mkdir -p desktop/app && cp web/index.html desktop/app/index.html
+      - name: 설치파일 빌드
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm install
+          npx electron-builder --mac dmg --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HouseColor-mac-dmg
+          path: desktop/dist/*.dmg
+
+  release:
+    name: 내려받기 페이지(Releases) 만들기
+    needs: [ android, windows, mac ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: 최신 버전
+          prerelease: false
+          make_latest: true
+          files: |
+            out/*.apk
+            out/*.exe
+            out/*.dmg
