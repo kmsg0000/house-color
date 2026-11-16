@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('houseColorDesktop', {
   comfySetWorkflow: text => ipcRenderer.invoke('comfy:setWorkflow', text),
   comfyTest: () => ipcRenderer.invoke('comfy:test'),
   comfyRun: (imageB64, prompt, megapixels) => ipcRenderer.invoke('comfy:run', imageB64, prompt, megapixels),
+  comfySegment: (imageB64, positive, negative, text) => ipcRenderer.invoke('comfy:segment', imageB64, positive, negative, text),
   comfyCancel: () => ipcRenderer.invoke('comfy:cancel'),
   onComfyProgress: cb => { const h = (_e, p) => cb(p); ipcRenderer.on('comfy:progress', h); return () => ipcRenderer.removeListener('comfy:progress', h); },
   relayStatus: () => ipcRenderer.invoke('relay:status'),

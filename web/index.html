@@ -169,6 +169,9 @@ summary{cursor:pointer;font-weight:700;color:var(--mute)}
       </div>
       <div class="label" style="margin-top:.6rem">지금 칠한 색</div>
       <div class="summary" id="summary7" style="margin-top:.4rem"></div>
+      <div class="finishBox hidden" style="display:flex;flex-direction:column;gap:.35rem;margin-top:.6rem">
+        <div class="row"><button class="btn finishGo" style="flex:2">✨ 실사 마감 (빛·그림자·질감)</button><button class="btn finishOff hidden">실사 마감 끄기</button></div>
+      </div>
       <div class="row" style="margin-top:.6rem"><button class="btn" id="aiUndo" disabled>↩ AI가 한 것 되돌리기</button><button class="btn" id="btnManual">✋ 직접 고치기</button></div>
       <div class="navrow"><button class="big-btn light" id="b7">← 사진</button><button class="big-btn" id="n7">완성 →</button></div>
     </div>
@@ -217,6 +220,7 @@ summary{cursor:pointer;font-weight:700;color:var(--mute)}
       <div class="row hidden" id="brushRow" style="margin-top:.5rem">
         <button class="btn" data-bsize="12">붓 작게</button><button class="btn on" data-bsize="28">보통</button><button class="btn" data-bsize="60">크게</button>
       </div>
+      <button class="btn hidden" id="btnSam" style="margin-top:.5rem"></button>
       <button class="btn" id="btnUndo" style="margin-top:.5rem">↩ 되돌리기</button>
       <div class="label" style="margin-top:.4rem">칠할 부분 목록</div>
       <div class="zones" id="zones"></div>
@@ -246,6 +250,10 @@ summary{cursor:pointer;font-weight:700;color:var(--mute)}
       <h2>5. 완성!</h2>
       <p style="margin:.4rem 0 .8rem">아래 버튼을 <b>누르고 있으면</b> 원래 사진이 보여요.</p>
       <button class="big-btn light" id="btnOrig">👀 원래 사진과 비교 (누르고 있기)</button>
+      <div class="finishBox hidden" style="display:flex;flex-direction:column;gap:.35rem;margin-top:.5rem">
+        <div class="row"><button class="btn finishGo" style="flex:2">✨ 실사 마감 (AI가 빛·그림자·질감 다듬기)</button><button class="btn finishOff hidden">실사 마감 끄기</button></div>
+        <p class="count" style="margin:0">색 번호는 그대로 유지하고, 칠한 벽 안에서만 다듬어요. 창문·간판·하늘은 건드리지 않아요. (10~60초)</p>
+      </div>
       <div class="label" style="margin-top:.4rem">사용한 색 (페인트 가게에 보여 주세요)</div>
       <div class="summary" id="summary"></div>
       <button class="big-btn blue" id="btnSave" style="margin-top:.4rem">💾 사진으로 저장하기</button>
@@ -285,6 +293,7 @@ summary{cursor:pointer;font-weight:700;color:var(--mute)}
         <button data-m="local" class="hidden" id="emLocal">내 PC ComfyUI</button><button data-m="remote" class="hidden" id="emRemote">PC 연결 (같은 Wi-Fi)</button>
       </div>
       <p class="count" id="eraseModeHelp" style="margin:0"></p>
+      <label id="samRow" class="count hidden" style="display:flex;gap:.4rem;align-items:flex-start"><input type="checkbox" id="samOn" checked style="margin-top:.25rem"> <span><b>🎯 정밀 선택 (SAM 3.1)</b> — 칠할 곳을 ComfyUI 가 정확히 잘라 줍니다. 하늘·유리창·간판으로 번지지 않아요. ComfyUI 최신 버전과 <code>sam3.1_multiplex_fp16.safetensors</code>(models/checkpoints) 가 필요해요.</span></label>
       <div id="emKey" class="hidden"><input class="search" id="eraseKey" type="password" placeholder="지우기용 API 키" autocomplete="off"></div>
       <div id="emLocalBox" class="hidden" style="display:flex;flex-direction:column;gap:.4rem">
         <input class="search" id="comfyUrl" placeholder="http://127.0.0.1:8188">
@@ -640,7 +649,7 @@ function placeAIBox(){const box=$('aibox');if(!box)return;if(OA()){box.classList
 function goStep(s){
   if(!aiMode()&&s>maxStep&&s!==7)return; if(aiMode()&&s!==1&&!src)return; if(!aiMode()&&s===7)s=2; step=s;
   document.querySelectorAll('[data-panel]').forEach(p=>p.classList.toggle('hidden',+p.dataset.panel!==s));
-  renderNav();placeAIBox();
+  renderNav();placeAIBox();if(s===3)updateSamBtn();if(s===5||s===7)updateFinishBtns();
   if(s===7)renderSummary('summary7');
   if(typeof refreshAIBox==='function')refreshAIBox();
   if(s===2){eraseTool='paint';syncEraseBtns();if(typeof updateEraseMode==='function')updateEraseMode();}
@@ -682,7 +691,8 @@ function loadImage(img){
   if(aiMode()){goStep(7);toast('사진이 열렸어요. AI에게 무엇을 할지 말씀해 보세요.',3200);}
   else{goStep(2);toast('사진이 열렸어요. 가리는 것이 없으면 [다음]을 누르세요.',3200);}
 }
-function recalcLab(x0,y0,w,h){for(let y=y0;y<y0+h;y++)for(let x=x0;x<x0+w;x++){const i=y*W+x,p=i*4;const l=rgb2lab(src[p],src[p+1],src[p+2]);LL[i]=l[0];AA[i]=l[1];BB[i]=l[2];}}
+let labRev=0;
+function recalcLab(x0,y0,w,h){labRev++;for(let y=y0;y<y0+h;y++)for(let x=x0;x<x0+w;x++){const i=y*W+x,p=i*4;const l=rgb2lab(src[p],src[p+1],src[p+2]);LL[i]=l[0];AA[i]=l[1];BB[i]=l[2];}}
 
 /* ---------- zoom / fit / pan ---------- */
 function fit(){
@@ -701,7 +711,7 @@ wrap.addEventListener('wheel',e=>{if(!W||!(e.ctrlKey||e.metaKey))return;e.preven
 /* ---------- zones ---------- */
 const ZONE_NAMES=['벽','두 번째 부분','세 번째 부분','네 번째 부분','다섯 번째 부분'];
 function addZone(){const z={id:++zoneSeq,name:ZONE_NAMES[zones.length]||('부분 '+(zones.length+1)),mask:new Uint8Array(W*H),color:null,dirty:true,count:0};zones.push(z);active=zones.length-1;lastWand=null;renderZones();return z;}
-function removeZone(i){zones.splice(i,1);if(!zones.length)addZone();active=Math.max(0,Math.min(active,zones.length-1));renderZones();render();}
+function removeZone(i){rev++;zones.splice(i,1);if(!zones.length)addZone();active=Math.max(0,Math.min(active,zones.length-1));renderZones();render();}
 function renderZones(){
   ['zones','zones4'].forEach(id=>{const el=$(id);el.innerHTML='';
     zones.forEach((z,i)=>{const d=document.createElement('div');d.className='zone'+(i===active?' on':'');
@@ -715,8 +725,9 @@ function renderZones(){
   });
 }
 $('btnAddZone').onclick=()=>{addZone();render();toast('새 부분: 사진에서 칠할 곳을 눌러 주세요');};
-function pushUndo(){const z=zones[active];if(!z)return;undoStack.push({id:z.id,mask:z.mask.slice(),color:z.color});if(undoStack.length>30)undoStack.shift();}
-function doUndo(){const u=undoStack.pop();if(!u){toast('되돌릴 것이 없어요');return;}const z=zones.find(z=>z.id===u.id);if(!z)return;z.mask=u.mask;z.color=u.color;z.dirty=true;lastWand=null;renderZones();updatePicked();render();}
+let rev=0,finish=null;
+function pushUndo(){rev++;const z=zones[active];if(!z)return;undoStack.push({id:z.id,mask:z.mask.slice(),color:z.color});if(undoStack.length>30)undoStack.shift();}
+function doUndo(){rev++;const u=undoStack.pop();if(!u){toast('되돌릴 것이 없어요');return;}const z=zones.find(z=>z.id===u.id);if(!z)return;z.mask=u.mask;z.color=u.color;z.dirty=true;lastWand=null;renderZones();updatePicked();render();}
 $('btnUndo').onclick=doUndo;
 function stats(z){if(!z||!z.dirty)return;let c=0;const m=z.mask,hr=new Uint32Array(256),hg=new Uint32Array(256),hb=new Uint32Array(256),hy=new Uint32Array(256);
   for(let i=0;i<m.length;i++)if(m[i]){const p=i*4;hr[src[p]]++;hg[src[p+1]]++;hb[src[p+2]]++;hy[(src[p]*54+src[p+1]*183+src[p+2]*19)>>8]++;c++;}
@@ -746,17 +757,42 @@ function adjustTol(delta){
 }
 $('btnWide').onclick=()=>adjustTol(+7);$('btnNarrow').onclick=()=>adjustTol(-6);
 
-function wand(x0,y0,sub){
-  const z=zones[active];if(!z)return;
-  const edge=Math.max(3,tol*0.55),N=W*H,seed=y0*W+x0,sL=LL[seed],sA=AA[seed],sB=BB[seed];
-  const reg=new Uint8Array(N),stack=new Int32Array(N);let sp=0;reg[seed]=1;stack[sp++]=seed;
+function growRegion(x0,y0,t,block){
+  const edge=Math.max(3,t*0.55),N=W*H,seed=y0*W+x0,sL=LL[seed],sA=AA[seed],sB=BB[seed];
+  const reg=new Uint8Array(N),stack=new Int32Array(N);let sp=0,cnt=1;reg[seed]=1;stack[sp++]=seed;
   const dist=(i,L,a,b)=>{const dl=(LL[i]-L)*0.55,da=AA[i]-a,db=BB[i]-b;return Math.sqrt(dl*dl+da*da+db*db);};
   while(sp){const p=stack[--sp],px=p%W;const nb=[px>0?p-1:-1,px<W-1?p+1:-1,p-W,p+W];
-    for(const n of nb){if(n<0||n>=N||reg[n])continue;if(dist(n,sL,sA,sB)<tol&&dist(n,LL[p],AA[p],BB[p])<edge){reg[n]=1;stack[sp++]=n;}}}
-  close1(reg);pushUndo();const m=z.mask;
+    for(const n of nb){if(n<0||n>=N||reg[n]||(block&&block[n]))continue;if(dist(n,sL,sA,sB)<t&&dist(n,LL[p],AA[p],BB[p])<edge){reg[n]=1;stack[sp++]=n;cnt++;}}}
+  return{reg,cnt};}
+function applyReg(reg,sub,x0,y0){const z=zones[active];if(!z)return;const N=W*H;pushUndo();const m=z.mask;
   if(sub){for(let i=0;i<N;i++)if(reg[i])m[i]=0;}else{for(let i=0;i<N;i++)if(reg[i])m[i]=1;}
-  z.dirty=true;lastWand=sub?null:{x:x0,y:y0,undo:undoStack[undoStack.length-1]};renderZones();render();
+  z.dirty=true;lastWand=sub||x0==null?null:{x:x0,y:y0,undo:undoStack[undoStack.length-1]};renderZones();render();}
+function wand(x0,y0,sub){
+  if(!zones[active])return;const{reg}=growRegion(x0,y0,tol);close1(reg);applyReg(reg,sub,x0,y0);
 }
+/* 하늘 영역 추정: 사진 위쪽 가장자리에서 시작해, 밝고 매끈하게 이어지는 부분 (흐린 회색 하늘 포함) */
+let skyCache=null;
+function skyMask(){if(skyCache&&skyCache.rev===labRev)return skyCache.m;
+  const N=W*H,m=new Uint8Array(N),stack=new Int32Array(N);let sp=0;const yMax=Math.floor(H*0.8);
+  const ok=i=>LL[i]>=52&&Math.hypot(AA[i],BB[i]+4)<26;
+  for(let x=0;x<W;x++)for(let y=0;y<2;y++){const i=y*W+x;if(ok(i)&&!m[i]){m[i]=1;stack[sp++]=i;}}
+  while(sp){const p=stack[--sp],px=p%W;const nb=[px>0?p-1:-1,px<W-1?p+1:-1,p-W,p+W];
+    for(const n of nb){if(n<0||n>=N||m[n]||((n/W)|0)>yMax||!ok(n))continue;const dl=LL[n]-LL[p],da=AA[n]-AA[p],db=BB[n]-BB[p];if(dl*dl+da*da+db*db<5.5){m[n]=1;stack[sp++]=n;}}}
+  // 너무 작으면(지붕선 근처 몇 픽셀 등) 하늘로 보지 않음
+  let c=0;for(let i=0;i<N;i++)c+=m[i];if(c<N*0.01)m.fill(0);
+  skyCache={rev:labRev,m};return m;}
+/* AI가 찍은 점에서 고를 때: 하늘은 막고, 영역이 위쪽 가장자리까지 번지거나 너무 넓으면 범위를 줄여 다시 고른다 */
+function negBlock(neg){if(!neg||!neg.length)return null;const N=W*H,b=new Uint8Array(N);
+  for(const[x,y]of neg){const g=growRegion(x,y,10);if(g.cnt>N*0.25)continue;for(let i=0;i<N;i++)if(g.reg[i])b[i]=1;}return b;}
+function safeGrow(x0,y0,extra){const N=W*H,sky0=skyMask(),seed=y0*W+x0;
+  let sky=sky0;if(extra){sky=new Uint8Array(N);for(let i=0;i<N;i++)sky[i]=sky0[i]|extra[i];}
+  if(sky[seed])return null;
+  // 하늘을 찾았으면 위쪽에 닿는 건 벽이 화면을 꽉 채운 경우라 괜찮다. 못 찾았으면 위쪽에 닿는 것 자체를 번짐으로 본다.
+  let skyN=0;for(let i=0;i<N;i+=7)skyN+=sky0[i];const topBad=skyN===0;
+  let t=Math.min(tol,13),g=null;
+  for(let k=0;k<6;k++){g=growRegion(x0,y0,t,sky);let top=0;for(let x=0;x<W;x++)top+=g.reg[x]|g.reg[W+x];
+    const frac=g.cnt/N;if(frac<=0.6&&!(topBad&&top>W*0.25))break;t*=0.72;if(t<4){if(frac>0.6)return null;break;}}
+  close1(g.reg);for(let i=0;i<N;i++)if(sky[i])g.reg[i]=0;return g.reg;}
 function close1(m){const N=W*H,d=new Uint8Array(N);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=y*W+x;if(m[i]||(x>0&&m[i-1])||(x<W-1&&m[i+1])||(y>0&&m[i-W])||(y<H-1&&m[i+W]))d[i]=1;}
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=y*W+x;if(!m[i]&&d[i]&&(x===0||d[i-1])&&(x===W-1||d[i+1])&&(y===0||d[i-W])&&(y===H-1||d[i+W]))m[i]=1;}}
@@ -778,7 +814,7 @@ cv.addEventListener('pointerdown',e=>{
   if(step===2){cv.setPointerCapture(e.pointerId);painting=true;lastPt=null;stroke(redMask,x,y,eraseSize,eraseTool==='paint'?1:0);renderSoon();return;}
   if(step===3||step===4){
     if(step===4){goStep(3);}
-    if(tool==='wand'){wand(Math.floor(x),Math.floor(y),false);return;}
+    if(tool==='wand'){if(samOn&&segCfg()){samTap(Math.floor(x),Math.floor(y));return;}wand(Math.floor(x),Math.floor(y),false);return;}
     cv.setPointerCapture(e.pointerId);painting=true;lastPt=null;pushUndo();lastWand=null;
     stroke(zones[active].mask,x,y,brushSize,tool==='brush'?1:0);zones[active].dirty=true;renderSoon();
   }
@@ -834,6 +870,29 @@ function updateEraseMode(){const p=aiEraseProvider();
 function eraseAuto(){return aiEraseProvider()?aiErase():doErase();}
 const ERASE_PROMPT='This is a photo of a building exterior. Remove every object inside the marked area (trees, bushes, cars, poles, wires, people, signs) and reconstruct what is hidden behind them: continue the building facade, walls, windows, balconies, railings, pipes, ground and sky exactly as the surrounding architecture implies, with the same materials, colours, lighting, shadows, perspective and photo grain. Do not add any new objects. Keep everything outside the marked area identical. Photorealistic.';
 function canvasB64(c,type){return c.toDataURL(type||'image/png').split(',')[1];}
+/* 이미지 편집 백엔드 공통 호출 (지우기·실사 마감). 결과 base64 PNG 반환 */
+async function editBackend(prov,ec,o){let unsub=null,ctl=null;
+  try{
+    if(prov==='local'||prov==='remote'){
+      const inputB64=canvasB64(o.comfyImg||o.img);$('busyCancel').classList.remove('hidden');$('progBar').style.width='5%';
+      if(prov==='local'){
+        unsub=DESK.onComfyProgress(p=>{$('busyT').textContent='ComfyUI: '+(p.text||'');if(p.max)$('progBar').style.width=Math.round(10+85*p.value/p.max)+'%';});
+        $('busyCancel').onclick=()=>DESK.comfyCancel();
+        const r=await DESK.comfyRun(inputB64,o.comfyPrompt,o.mp);if(!r.ok)throw new Error(r.error);return r.data.image;}
+      ctl=new AbortController();$('busyCancel').onclick=()=>ctl.abort();$('busyT').textContent='PC 의 ComfyUI 가 작업 중… (처음엔 모델 로딩으로 오래 걸릴 수 있어요)';
+      const r=await lanFetch(ec.url+'/api/edit',{method:'POST',signal:ctl.signal,headers:{authorization:'Bearer '+ec.token,'content-type':'application/json'},body:JSON.stringify({image:inputB64,prompt:o.comfyPrompt,megapixels:o.mp})});
+      const j=await r.json();if(!r.ok)throw new Error(j.error||('PC 응답 오류 '+r.status));return j.image;}
+    if(prov==='openai'){
+      const fd=new FormData();const toBlob=c=>new Promise(r=>c.toBlob(r,'image/png'));
+      fd.append('model',ec.model);fd.append('image',await toBlob(o.img),'image.png');fd.append('mask',await toBlob(o.mk),'mask.png');fd.append('prompt',o.prompt);fd.append('n','1');fd.append('size','auto');
+      const r=await fetch('https://api.openai.com/v1/images/edits',{method:'POST',headers:{authorization:'Bearer '+ec.key},body:fd});const j=await r.json();
+      if(!r.ok)throw new Error((j.error&&j.error.message)||r.status);return j.data&&j.data[0]&&j.data[0].b64_json;}
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(ec.model)+':generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':ec.key},
+      body:JSON.stringify({contents:[{role:'user',parts:o.geminiParts}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});
+    const j=await r.json();if(!r.ok)throw new Error((j.error&&j.error.message)||r.status);
+    const parts=((j.candidates||[])[0]||{}).content?.parts||[];const ip=parts.find(p=>p.inline_data||p.inlineData);return ip&&(ip.inline_data||ip.inlineData).data;
+  }finally{if(unsub)unsub();$('busyCancel').classList.add('hidden');}
+}
 async function aiErase(){
   let x0=W,y0=H,x1=-1,y1=-1,cnt=0;
   for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(redMask[y*W+x]){cnt++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
@@ -862,34 +921,13 @@ async function aiErase(){
   const marked=document.createElement('canvas');marked.width=sw;marked.height=sh;const gk=marked.getContext('2d');gk.drawImage(img,0,0);
   const kd=gk.getImageData(0,0,sw,sh);for(let i=0;i<sw*sh;i++)if(md.data[i*4+3]===0){kd.data[i*4]=255;kd.data[i*4+1]=0;kd.data[i*4+2]=0;}gk.putImageData(kd,0,0);
   $('busy').classList.add('show');$('progBar').style.width='30%';$('busyT').textContent='AI가 뒤쪽 배경을 그리는 중… (10~60초)';
-  let outB64=null,err=null,unsub=null,ctl=null;
+  let outB64=null,err=null;
   const COMFY_PROMPT=(instr?('Remove '+instr+' from the photo. '):'Remove the object highlighted in red from the photo, and remove the red highlight too. ')+'Fill the revealed area naturally with what is behind it (building facade, walls, windows, pipes, sidewalk, road, sky), matching the surrounding materials, colours, lighting and perspective. Keep everything else exactly the same. Photorealistic.';
   try{
-    const ec=eraseCfg(),imgModel=ec.model,ekey=ec.key;
-    if(comfyish){
-      const inputB64=canvasB64(instr||whole?img:marked);$('busyCancel').classList.remove('hidden');$('progBar').style.width='5%';
-      if(prov==='local'){
-        unsub=DESK.onComfyProgress(p=>{$('busyT').textContent='ComfyUI: '+(p.text||'');if(p.max)$('progBar').style.width=Math.round(10+85*p.value/p.max)+'%';});
-        $('busyCancel').onclick=()=>DESK.comfyCancel();
-        const r=await DESK.comfyRun(inputB64,COMFY_PROMPT,mp);if(!r.ok)throw new Error(r.error);outB64=r.data.image;
-      }else{
-        ctl=new AbortController();$('busyCancel').onclick=()=>ctl.abort();$('busyT').textContent='PC 의 ComfyUI 가 작업 중… (처음엔 모델 로딩으로 오래 걸릴 수 있어요)';
-        const r=await lanFetch(ec.url+'/api/edit',{method:'POST',signal:ctl.signal,headers:{authorization:'Bearer '+ec.token,'content-type':'application/json'},body:JSON.stringify({image:inputB64,prompt:COMFY_PROMPT,megapixels:mp})});
-        const j=await r.json();if(!r.ok)throw new Error(j.error||('PC 응답 오류 '+r.status));outB64=j.image;}
-    }
-    else if(prov==='openai'){
-      const fd=new FormData();const toBlob=c=>new Promise(r=>c.toBlob(r,'image/png'));
-      fd.append('model',imgModel);fd.append('image',await toBlob(img),'image.png');fd.append('mask',await toBlob(mk),'mask.png');fd.append('prompt',ERASE_PROMPT);fd.append('n','1');fd.append('size','auto');
-      const r=await fetch('https://api.openai.com/v1/images/edits',{method:'POST',headers:{authorization:'Bearer '+ekey},body:fd});const j=await r.json();
-      if(!r.ok)throw new Error((j.error&&j.error.message)||r.status);outB64=j.data&&j.data[0]&&j.data[0].b64_json;}
-    else{
-      const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(imgModel)+':generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':ekey},
-        body:JSON.stringify({contents:[{role:'user',parts:[{text:ERASE_PROMPT+' The first image is the photo. In the second image the area to remove is painted pure red. Return the edited first image (without any red) at the same framing.'},{inline_data:{mime_type:'image/png',data:canvasB64(img)}},{inline_data:{mime_type:'image/png',data:canvasB64(marked)}}]}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});
-      const j=await r.json();if(!r.ok)throw new Error((j.error&&j.error.message)||r.status);
-      const parts=((j.candidates||[])[0]||{}).content?.parts||[];const ip=parts.find(p=>p.inline_data||p.inlineData);outB64=ip&&(ip.inline_data||ip.inlineData).data;}
+    outB64=await editBackend(prov,eraseCfg(),{img,mk,comfyImg:(instr||whole)?img:marked,mp,prompt:ERASE_PROMPT,comfyPrompt:COMFY_PROMPT,
+      geminiParts:[{text:ERASE_PROMPT+' The first image is the photo. In the second image the area to remove is painted pure red. Return the edited first image (without any red) at the same framing.'},{inline_data:{mime_type:'image/png',data:canvasB64(img)}},{inline_data:{mime_type:'image/png',data:canvasB64(marked)}}]});
     if(!outB64)throw new Error('AI가 이미지를 돌려주지 않았어요');
   }catch(e){err=e;}
-  if(unsub)unsub();$('busyCancel').classList.add('hidden');
   if(err){$('busy').classList.remove('show');const msg=err.name==='AbortError'?'취소했어요.':(err.message||String(err));toast('AI 지우기 실패: '+msg+(/fetch|Failed|network/i.test(msg)&&prov==='remote'?' (PC 주소·토큰·같은 Wi-Fi 인지 확인)':'')+' — [기본 방식으로 지우기]도 있어요.',6000);return false;}
   // composite: AI result only inside the (feathered) mask, original everywhere else
   const res=await new Promise((ok,no)=>{const im=new Image();im.onload=()=>ok(im);im.onerror=()=>no();im.src='data:image/png;base64,'+outB64;}).catch(()=>null);
@@ -899,7 +937,7 @@ async function aiErase(){
   const R=Math.max(2,Math.round(D*0.8)),tmp=new Float32Array(cw*ch);
   for(let pass=0;pass<2;pass++){for(let y=0;y<ch;y++){let acc=0;for(let x=-R;x<cw;x++){if(x+R<cw)acc+=a[y*cw+x+R];if(x-R-1>=0)acc-=a[y*cw+x-R-1];if(x>=0)tmp[y*cw+x]=acc/(2*R+1);}}
     for(let x=0;x<cw;x++){let acc=0;for(let y=-R;y<ch;y++){if(y+R<ch)acc+=tmp[(y+R)*cw+x];if(y-R-1>=0)acc-=tmp[(y-R-1)*cw+x];if(y>=0)a[y*cw+x]=acc/(2*R+1);}}}
-  eraseUndo.push(src.slice());if(eraseUndo.length>6)eraseUndo.shift();$('btnUndoErase').disabled=false;
+  rev++;eraseUndo.push(src.slice());if(eraseUndo.length>6)eraseUndo.shift();$('btnUndoErase').disabled=false;
   for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){let al=a[y*cw+x];if(dm[(cy0+y)*W+cx0+x])al=Math.max(al,0.999);if(al<=0.001)continue;al=Math.min(1,al*1.6);const s=(y*cw+x)*4,t=((cy0+y)*W+cx0+x)*4;
     src[t]=rd[s]*al+src[t]*(1-al);src[t+1]=rd[s+1]*al+src[t+1]*(1-al);src[t+2]=rd[s+2]*al+src[t+2]*(1-al);}
   recalcLab(cx0,cy0,cw,ch);zones.forEach(z=>z.dirty=true);redMask.fill(0);$('busy').classList.remove('show');render();
@@ -927,7 +965,7 @@ function doErase(){return new Promise(resolve=>{
     if(d.progress!==undefined){$('progBar').style.width=Math.round(d.progress*100)+'%';return;}
     $('busy').classList.remove('show');
     if(d.error){toast('지우기에 실패했어요: '+d.error);resolve(false);return;}
-    eraseUndo.push(src.slice());if(eraseUndo.length>6)eraseUndo.shift();$('btnUndoErase').disabled=false;
+    rev++;eraseUndo.push(src.slice());if(eraseUndo.length>6)eraseUndo.shift();$('btnUndoErase').disabled=false;
     let out=d.rgba;
     if(scale<1){const c3=document.createElement('canvas');c3.width=sw;c3.height=sh;c3.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(out),sw,sh),0,0);
       const c4=document.createElement('canvas');c4.width=cw;c4.height=ch;const g4=c4.getContext('2d');g4.imageSmoothingQuality='high';g4.drawImage(c3,0,0,cw,ch);out=g4.getImageData(0,0,cw,ch).data;
@@ -941,16 +979,17 @@ function doErase(){return new Promise(resolve=>{
 });}
 (()=>{const b=$('btnCmpErase');let saved=null;const on=e=>{e.preventDefault();if(!eraseUndo.length||saved)return;saved=src;src=eraseUndo[eraseUndo.length-1];render();},off=()=>{if(saved){src=saved;saved=null;render();}};
   b.addEventListener('pointerdown',on);['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,off));b.addEventListener('contextmenu',e=>e.preventDefault());})();
-$('btnUndoErase').onclick=()=>{const s=eraseUndo.pop();if(!s)return;src=s;recalcLab(0,0,W,H);zones.forEach(z=>z.dirty=true);$('btnUndoErase').disabled=!eraseUndo.length;render();toast('지우기 전으로 되돌렸어요');};
+$('btnUndoErase').onclick=()=>{rev++;const s=eraseUndo.pop();if(!s)return;src=s;recalcLab(0,0,W,H);zones.forEach(z=>z.dirty=true);$('btnUndoErase').disabled=!eraseUndo.length;render();toast('지우기 전으로 되돌렸어요');};
 
 /* ---------- rendering ---------- */
 function compose(overlay){
   const out=ctx.createImageData(W,H),d=out.data;d.set(src);
   if(showOrig)return out;
+  const fin=finish&&finish.rev===rev;if(fin)d.set(finish.data);
   /* Physically-based repaint: observed = paint colour x lighting.
      Lighting per pixel = original pixel / original wall colour (albedo, robust median),
      so shadows, sunlight, colour cast of the light and surface texture all carry over. */
-  for(const z of zones){if(!z.color)continue;stats(z);if(!z.count)continue;
+  if(!fin)for(const z of zones){if(!z.color)continue;stats(z);if(!z.count)continue;
     const alb=albedo(z),Yalb=Math.max(1e-4,0.2126*alb[0]+0.7152*alb[1]+0.0722*alb[2]);
     const t=hex2rgb(z.color.hex),T0=LIN[t[0]],T1=LIN[t[1]],T2=LIN[t[2]];
     const m=z.mask,k=0.6;
@@ -974,7 +1013,7 @@ function compose(overlay){
       else if(tint){d[p]=d[p]*0.55+29*0.45;d[p+1]=d[p+1]*0.55+91*0.45;d[p+2]=d[p+2]*0.55+240*0.45;}}}
   return out;
 }
-function render(){if(!src)return;ctx.putImageData(compose(true),0,0);}
+function render(){if(!src)return;ctx.putImageData(compose(true),0,0);if(finish&&finish.rev!==rev){finish=null;updateFinishBtns();}}
 
 /* ---------- step 4: palette ---------- */
 function renderSets(){const el=$('sets');el.innerHTML='';SETS.forEach((s,i)=>{const b=document.createElement('button');b.textContent=s.name;b.className=i===curSet?'on':'';b.onclick=()=>{curSet=i;renderSets();renderGrid();};el.appendChild(b);});}
@@ -1068,7 +1107,7 @@ async function keyAsk(prompt,blob,signal){
   }}catch(e){if(e&&e.name==='AbortError')throw{code:'cancelled'};if(e&&e.code)throw e;throw{code:'network',message:String(e&&e.message||e)};}
   return parseJSONLoose(text);
 }
-function openCfg(){const m=$('aiCfg');m.classList.add('show');$('cfgKey').value=aiCfg.key||'';$('remoteUrl').value=aiCfg.remoteUrl||'';$('remoteToken').value=aiCfg.remoteToken||'';selProv(aiCfg.provider);}
+function openCfg(){const m=$('aiCfg');m.classList.add('show');$('samOn').checked=aiCfg.sam!==false;$('cfgKey').value=aiCfg.key||'';$('remoteUrl').value=aiCfg.remoteUrl||'';$('remoteToken').value=aiCfg.remoteToken||'';selProv(aiCfg.provider);}
 function selProv(p){aiCfg.provider=p;const sw=p==='siwc';$('eraseBox').classList.remove('hidden');selEraseMode(aiCfg.eraseMode||'auto');$('eraseKey').value=aiCfg.eraseKey||'';$('cfgKey').classList.toggle('hidden',sw);$('siwcBox').classList.toggle('hidden',!sw);$('cfgClear').classList.toggle('hidden',sw);if(sw)siwcRefresh();document.querySelectorAll('#provChips button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
   $('cfgModel').value=aiCfg.model&&aiCfg._mp===p?aiCfg.model:PROVIDERS[p].model;$('cfgModel').placeholder=sw?'비워 두면 자동 선택':'';
   const im=PROVIDERS[p].img;$('cfgImgModel').disabled=im===null;$('cfgImgModel').value=im===null?'':(aiCfg.imgModel&&aiCfg._mp===p?aiCfg.imgModel:im);$('cfgImgModel').placeholder=im===null?'이 방식은 그림을 그릴 수 없어요 (아래 지우기용 키 사용)':'';$('cfgHelp').textContent=PROVIDERS[p].help+' · 사용한 만큼 그 회사에 요금이 청구됩니다.';}
@@ -1077,7 +1116,7 @@ const EM_HELP={auto:'명령에 쓰는 AI가 OpenAI·Gemini 키면 그 키로, �
   openai:'OpenAI 이미지 편집(gpt-image)으로 지웁니다. API 사용료가 따로 청구돼요(ChatGPT 구독과 별개).',gemini:'Gemini 이미지 편집으로 지웁니다. API 사용료가 따로 청구될 수 있어요.',
   local:'이 PC 의 ComfyUI(FLUX.2 Klein 등)로 지웁니다. 무료, 인터넷 불필요. ComfyUI 를 켜 두고 "API 형식"으로 내보낸 워크플로 JSON 을 불러오세요.',remote:'같은 Wi-Fi 의 PC 에서 돌아가는 ComfyUI 를 씁니다. PC 앱에서 휴대폰 연결을 켜고 주소·토큰을 넣으세요.'};
 function selEraseMode(m){if(m==='local'&&!(DESK&&DESK.comfyRun))m='auto';aiCfg.eraseMode=m;document.querySelectorAll('#eraseModes button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
-  $('eraseModeHelp').textContent=EM_HELP[m]||'';$('emKey').classList.toggle('hidden',!(m==='openai'||m==='gemini'||m==='auto'));
+  $('eraseModeHelp').textContent=EM_HELP[m]||'';$('samRow').classList.toggle('hidden',!(m==='local'||m==='remote'));$('emKey').classList.toggle('hidden',!(m==='openai'||m==='gemini'||m==='auto'));
   if(m==='openai'||m==='gemini')aiCfg.eraseProv=m;$('eraseKey').placeholder=(m==='openai'||(m==='auto'&&aiCfg.eraseProv==='openai'))?'OpenAI API 키 (platform.openai.com)':'Gemini API 키 (aistudio.google.com)';
   $('emLocalBox').classList.toggle('hidden',m!=='local');$('emRemoteBox').classList.toggle('hidden',m!=='remote');if(m==='local')comfyRefresh();}
 document.querySelectorAll('#eraseModes button').forEach(b=>b.onclick=()=>selEraseMode(b.dataset.m));
@@ -1098,7 +1137,7 @@ $('remoteTest').onclick=async()=>{const u=$('remoteUrl').value.trim().replace(/\
   $('remoteState').textContent='연결 확인 중…';try{const r=await lanFetch(u+'/api/ping',{headers:{authorization:'Bearer '+t}});const j=await r.json();
     if(!r.ok)throw new Error(j.error||('HTTP '+r.status));$('remoteState').textContent='✅ PC 연결됨'+(j.comfy&&j.comfy.ok?' — '+j.comfy.device:(j.comfy&&j.comfy.error?'\n⚠ PC 의 ComfyUI: '+j.comfy.error:''));}
   catch(e){$('remoteState').textContent='⚠ 연결 실패: '+(e.message||e)+'\n같은 Wi-Fi 인지, PC 앱에서 휴대폰 연결이 켜져 있는지, 주소·토큰이 맞는지 확인하세요.';}};
-$('cfgSave').onclick=()=>{aiCfg.key=$('cfgKey').value.trim();aiCfg.model=$('cfgModel').value.trim();aiCfg.imgModel=$('cfgImgModel').value.trim();aiCfg.eraseKey=$('eraseKey').value.trim();aiCfg.remoteUrl=$('remoteUrl').value.trim();aiCfg.remoteToken=$('remoteToken').value.trim();aiCfg.comfyMp=Number($('comfyMp').value)||1;
+$('cfgSave').onclick=()=>{aiCfg.key=$('cfgKey').value.trim();aiCfg.model=$('cfgModel').value.trim();aiCfg.imgModel=$('cfgImgModel').value.trim();aiCfg.eraseKey=$('eraseKey').value.trim();aiCfg.remoteUrl=$('remoteUrl').value.trim();aiCfg.remoteToken=$('remoteToken').value.trim();aiCfg.comfyMp=Number($('comfyMp').value)||1;aiCfg.sam=$('samOn').checked;samBroken=false;
   if(DESK&&DESK.comfySetUrl&&$('comfyUrl').value.trim())DESK.comfySetUrl($('comfyUrl').value.trim());aiCfg._mp=aiCfg.provider;try{localStorage.setItem('aiCfg',JSON.stringify(aiCfg));}catch(e){}$('aiCfg').classList.remove('show');
   toast(hasKey()?PROVIDERS[aiCfg.provider].name+' 연결 준비 완료':'키가 비어 있어요');refreshAIBox();};
 $('cfgClear').onclick=()=>{aiCfg.key='';$('cfgKey').value='';try{localStorage.setItem('aiCfg',JSON.stringify(aiCfg));}catch(e){}toast('키를 지웠어요');refreshAIBox();};
@@ -1185,7 +1224,7 @@ async function runAI(){
 
 명령을 앱 동작 목록으로 바꿔라. 동작 종류:
 1) {"type":"erase","boxes":[[x0,y0,x1,y1]]} — 지울 물체(나무, 차, 전봇대, 전깃줄 등)를 감싸는 상자. 물체보다 조금 넉넉하게. 사용자가 지우라고 했을 때만.
-2) {"type":"select","part":"벽","points":[[x,y],...]} — 칠할 표면 위의 점 2~6개. 그 표면의 넓고 고른 한가운데에 찍고 창문·문·그림자 경계·모서리·나무는 피한다. 같은 재질이 여러 면(예: 좌우 벽)으로 나뉘면 각 면마다 점을 찍는다. 이미 selected=true 인 부분을 다시 칠할 때는 select 생략.
+2) {"type":"select","part":"벽","points":[[x,y],...],"exclude":[[x,y],...]} — points: 칠할 표면 위의 점 2~6개. 그 표면의 넓고 고른 한가운데에 찍고 창문·문·그림자 경계·모서리·나무는 피한다. 같은 재질이 여러 면(예: 좌우 벽, 층마다 나뉜 띠)으로 나뉘면 각 면마다 점을 찍는다. exclude: 칠하면 안 되는데 색이 비슷한 곳(흐린 하늘, 유리창, 간판, 옆 건물, 도로) 위의 점 0~5개. 이미 selected=true 인 부분을 다시 칠할 때는 select 생략.
 3) {"type":"color","part":"벽","hex":"rrggbb","set":"cgi","code":""} — 칠할 색. 사용자가 색 번호를 말했으면 code에 그대로 넣는다. 아니면 원하는 느낌의 실제 외벽 페인트다운 hex를 고르면 앱이 가장 가까운 컬러칩을 찾는다. 추천을 원하면 건물과 주변에 어울리는 조합을 골라 select와 color를 함께 넣는다.
 part 이름은 짧은 한국어(벽, 지붕, 창틀, 문, 1층 벽, 2층 벽 등)로 쓰고, 이미 있는 부분 이름이 맞으면 그 이름을 그대로 쓴다.
 순서는 erase → select → color.
@@ -1212,17 +1251,20 @@ async function execAI(res){
       const x0=Math.floor(P(b[0])*W),y0=Math.floor(P(b[1])*H),x1=Math.ceil(P(b[2])*W),y1=Math.ceil(P(b[3])*H);
       for(let y=Math.max(0,y0);y<=Math.min(H-1,y1);y++)for(let x=Math.max(0,x0);x<=Math.min(W-1,x1);x++)redMask[y*W+x]=1;}
     if(!AIM&&step!==2){unlock(2);goStep(2);}render();aiSay('🧹 지우는 중이에요…');if(await eraseAuto())did.push('지우기');}
+  const toPx=l=>(Array.isArray(l)?l:[]).filter(pt=>Array.isArray(pt)&&pt.length>=2).slice(0,12).map(pt=>[Math.floor(P(pt[0])*W),Math.floor(P(pt[1])*H)]);
   for(const a of acts.filter(a=>a&&a.type==='select')){const z=findZone(a.part);
-    for(const pt of (a.points||[])){if(!Array.isArray(pt))continue;const x=Math.floor(P(pt[0])*W),y=Math.floor(P(pt[1])*H);
-      const before=z.count;wand(x,y,false);stats(z);if(z.count>W*H*0.6){doUndo();stats(z);}}
-    lastWand=null;did.push(z.name+' 선택');}
+    const pts=toPx(a.points),neg=toPx(a.exclude);let precise=false;
+    if(pts.length&&segCfg()){try{aiSay('🎯 ComfyUI 가 칠할 곳을 정밀하게 고르는 중…');const r=await samMask(pts,neg);if(r&&r.reg){close1(r.reg);applyReg(r.reg,false);precise=true;}}catch(e){samFail(e);}}
+    if(!precise){const block=negBlock(neg);
+      for(const[x,y]of pts){const reg=safeGrow(x,y,block);if(!reg)continue;applyReg(reg,false);stats(z);if(z.count>W*H*0.6){doUndo();stats(z);}}}
+    lastWand=null;did.push(z.name+' 선택'+(precise?'(정밀)':''));}
   for(const a of acts.filter(a=>a&&a.type==='color')){const z=findZone(a.part);stats(z);
     if(!z.count){continue;}
     let col=(aiColor&&a.code&&String(a.code).replace(/\s+/g,'').toUpperCase()===aiColor.code.replace(/\s+/g,'').toUpperCase())?aiColor:(a.code?chipByCode(a.code,a.set):null);if(!col&&/^[0-9a-f]{6}$/i.test(String(a.hex||'').replace('#','')))col=nearestChip(String(a.hex).replace('#','').toLowerCase(),a.set||SETS[curSet].id);
     if(col){pushUndo();z.color=col;colored=true;did.push(z.name+' → '+col.code);}}
   // user picked a colour first but the AI only selected areas -> paint them with that colour
   if(aiColor&&!colored){for(const a of acts.filter(a=>a&&a.type==='select')){const z=findZone(a.part);stats(z);if(z.count){pushUndo();z.color=aiColor;colored=true;did.push(z.name+' → '+aiColor.code);}}}
-  renderZones();updatePicked();
+  renderZones();updatePicked();updateFinishBtns();
   if(AIM){unlock(4);if(colored)unlock(5);goStep(7);$('aiUndo').disabled=false;}
   else if(colored){unlock(3);unlock(4);unlock(5);goStep(4);}else if(did.some(d=>d.endsWith('선택'))){unlock(3);unlock(4);goStep(3);}
   render();
@@ -1230,6 +1272,82 @@ async function execAI(res){
   aiSay((say?say+'\n':'')+(did.length?'✔ '+did.join(', '):'할 수 있는 동작을 찾지 못했어요. 조금 더 구체적으로 말씀해 주세요.'));
   $('aiq').value='';
 }
+/* ---------- ① 정밀 선택: ComfyUI 기본 내장 SAM 3.1 ---------- */
+let samBroken=false,samOn=true,samBusy=false;
+function segCfg(){if(!standalone||samBroken||aiCfg.sam===false)return null;const m=aiCfg.eraseMode;
+  if(m==='local'&&DESK&&DESK.comfySegment)return{p:'local'};
+  if(m==='remote'&&aiCfg.remoteUrl&&aiCfg.remoteToken)return{p:'remote',url:aiCfg.remoteUrl.replace(/\/$/,''),token:aiCfg.remoteToken};
+  return null;}
+async function samMask(pos,neg){const c=segCfg();if(!c)return null;
+  const s=Math.min(1,1280/Math.max(W,H)),sw=Math.max(16,Math.round(W*s)),sh=Math.max(16,Math.round(H*s));
+  const full=document.createElement('canvas');full.width=W;full.height=H;full.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(src),W,H),0,0);
+  const c2=document.createElement('canvas');c2.width=sw;c2.height=sh;const g=c2.getContext('2d');g.imageSmoothingQuality='high';g.drawImage(full,0,0,sw,sh);
+  const S=a=>(a||[]).map(([x,y])=>({x:Math.round(x*sw/W),y:Math.round(y*sh/H)}));
+  const b64=canvasB64(c2);let out;
+  if(c.p==='local'){const r=await DESK.comfySegment(b64,S(pos),S(neg),'');if(!r.ok)throw new Error(r.error);out=r.data.image;}
+  else{const r=await lanFetch(c.url+'/api/segment',{method:'POST',headers:{authorization:'Bearer '+c.token,'content-type':'application/json'},body:JSON.stringify({image:b64,positive:S(pos),negative:S(neg)})});
+    const j=await r.json();if(!r.ok)throw new Error(j.error||('PC 응답 오류 '+r.status));out=j.image;}
+  if(!out)throw new Error('마스크를 받지 못했어요');
+  const im=await new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>no(new Error('마스크를 읽지 못했어요'));i.src='data:image/png;base64,'+out;});
+  const mc=document.createElement('canvas');mc.width=W;mc.height=H;const mg=mc.getContext('2d');mg.imageSmoothingQuality='high';mg.drawImage(im,0,0,W,H);
+  const md=mg.getImageData(0,0,W,H).data,N=W*H,reg=new Uint8Array(N);let cnt=0;
+  for(let i=0;i<N;i++)if(md[i*4]>127){reg[i]=1;cnt++;}
+  // 점이 실제로 마스크 안에 들어갔는지, 크기가 말이 되는지 확인. 아니면 앱 방식으로
+  const hit=pos.some(([x,y])=>reg[y*W+x]);
+  if(!hit||cnt<N*0.0005||cnt>N*0.85)return{reg:null,cnt};
+  return{reg,cnt};}
+function samFail(e){const msg=(e&&e.message)||String(e);
+  if(/SAM 3\.1|모델 파일|연결할 수 없|지원하지 않|not found/i.test(msg)){samBroken=true;updateSamBtn();}
+  toast('정밀 선택(SAM)이 안 돼서 기본 방식으로 골랐어요: '+msg,6500);}
+async function samTap(x,y){if(samBusy)return;samBusy=true;toast('🎯 정밀하게 고르는 중…',1500);
+  try{const r=await samMask([[x,y]],[]);if(r&&r.reg){close1(r.reg);applyReg(r.reg,false);}else{wand(x,y,false);toast('정밀 선택 결과가 이상해서 기본 방식으로 골랐어요');}}
+  catch(e){samFail(e);wand(x,y,false);}finally{samBusy=false;}}
+function updateSamBtn(){const b=$('btnSam');const ok=!!segCfg();b.classList.toggle('hidden',!ok);b.textContent='🎯 AI 정밀 선택: '+(samOn?'켜짐':'꺼짐');b.classList.toggle('on',samOn);}
+$('btnSam').onclick=()=>{samOn=!samOn;updateSamBtn();toast(samOn?'누르면 ComfyUI(SAM)가 정확히 잘라서 골라요':'누르면 비슷한 색을 따라 골라요 (기본 방식)');};
+
+/* ---------- ② 실사 마감: 칠한 벽 안에서만 AI가 빛·그림자·질감을 다듬고, 평균색은 컬러칩 색으로 고정 ---------- */
+const FINISH_PROMPT='This photo shows a building whose wall surfaces were digitally recoloured. Make the recoloured surfaces look like real, freshly applied exterior paint in this exact photo: natural sunlight and shade, soft shadows under ledges and window frames, ambient occlusion in corners, the subtle surface texture of the original material. Keep the paint colours exactly the same hue and brightness. Do not change the building shape, windows, glass, signs, text, sky, trees, people or anything else. Same framing and perspective. Photorealistic photograph.';
+function updateFinishBtns(){const ok=!!aiEraseProvider()&&zones.some(z=>z.color),on=!!(finish&&finish.rev===rev);
+  document.querySelectorAll('.finishBox').forEach(b=>b.classList.toggle('hidden',!ok&&!on));
+  document.querySelectorAll('.finishOff').forEach(b=>b.classList.toggle('hidden',!on));
+  document.querySelectorAll('.finishGo').forEach(b=>b.textContent=on?'✨ 실사 마감 다시 하기':(b.closest('[data-panel="7"]')?'✨ 실사 마감 (빛·그림자·질감)':'✨ 실사 마감 (AI가 빛·그림자·질감 다듬기)'));}
+document.querySelectorAll('.finishGo').forEach(b=>b.onclick=()=>doFinish());
+document.querySelectorAll('.finishOff').forEach(b=>b.onclick=()=>{finish=null;render();updateFinishBtns();toast('실사 마감을 껐어요');});
+async function doFinish(){const prov=aiEraseProvider();if(!prov){openCfg();toast('실사 마감은 ⚙ AI 설정의 "AI로 지우기 방식"(ComfyUI·OpenAI·Gemini)을 써요');return;}
+  const cz=zones.filter(z=>{stats(z);return z.color&&z.count;});if(!cz.length){toast('먼저 색을 칠해 주세요');return;}
+  finish=null;const base=compose(false).data,N=W*H,zi=new Int16Array(N).fill(-1);
+  cz.forEach((z,k)=>{const m=z.mask;for(let i=0;i<N;i++)if(m[i])zi[i]=k;});
+  let x0=W,y0=H,x1=-1,y1=-1;for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(zi[y*W+x]>=0){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+  const mgn=Math.round(Math.max(x1-x0,y1-y0)*0.08+24),cx0=Math.max(0,x0-mgn),cy0=Math.max(0,y0-mgn),cx1=Math.min(W-1,x1+mgn),cy1=Math.min(H-1,y1+mgn),cw=cx1-cx0+1,ch=cy1-cy0+1;
+  const comfyish=(prov==='local'||prov==='remote'),mp=Number(aiCfg.comfyMp||1);
+  const sc=comfyish?Math.min(1,Math.sqrt(mp*1e6/(cw*ch))):Math.min(1,1024/Math.max(cw,ch));
+  const r16=v=>comfyish?Math.max(16,Math.round(v/16)*16):Math.max(16,Math.round(v)),sw=r16(cw*sc),sh=r16(ch*sc);
+  const full=document.createElement('canvas');full.width=W;full.height=H;full.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(base),W,H),0,0);
+  const img=document.createElement('canvas');img.width=sw;img.height=sh;const gi=img.getContext('2d');gi.imageSmoothingQuality='high';gi.drawImage(full,cx0,cy0,cw,ch,0,0,sw,sh);
+  const mk=document.createElement('canvas');mk.width=sw;mk.height=sh;const gm=mk.getContext('2d'),md=gm.createImageData(sw,sh);
+  for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){const X=Math.min(W-1,cx0+Math.floor(x*cw/sw)),Y=Math.min(H-1,cy0+Math.floor(y*ch/sh));md.data[(y*sw+x)*4+3]=zi[Y*W+X]>=0?0:255;}
+  gm.putImageData(md,0,0);
+  $('busy').classList.add('show');$('progBar').style.width='30%';$('busyT').textContent='✨ AI가 빛·그림자·질감을 다듬는 중… (10~60초)';
+  let out=null;
+  try{out=await editBackend(prov,eraseCfg(),{img,mk,mp,prompt:FINISH_PROMPT,comfyPrompt:FINISH_PROMPT,geminiParts:[{text:FINISH_PROMPT+' Return the edited photo at the same framing and size.'},{inline_data:{mime_type:'image/png',data:canvasB64(img)}}]});
+    if(!out)throw new Error('AI가 이미지를 돌려주지 않았어요');}
+  catch(e){$('busy').classList.remove('show');toast('실사 마감 실패: '+(e.name==='AbortError'?'취소했어요.':(e.message||e)),6000);return;}
+  const res=await new Promise((ok,no)=>{const im=new Image();im.onload=()=>ok(im);im.onerror=()=>no();im.src='data:image/png;base64,'+out;}).catch(()=>null);
+  if(!res){$('busy').classList.remove('show');toast('AI 결과 이미지를 읽지 못했어요');return;}
+  const rc=document.createElement('canvas');rc.width=cw;rc.height=ch;const gr=rc.getContext('2d');gr.imageSmoothingQuality='high';gr.drawImage(res,0,0,cw,ch);const rd=gr.getImageData(0,0,cw,ch).data;
+  // 부분마다 평균색(선형 RGB)을 컬러칩으로 칠한 결과에 맞춘다 → 색 번호는 유지, 명암·질감만 AI 것
+  const sums=cz.map(()=>new Float64Array(7));
+  for(let y=1;y<ch-1;y++)for(let x=1;x<cw-1;x++){const i=(cy0+y)*W+cx0+x,k=zi[i];if(k<0||zi[i-1]!==k||zi[i+1]!==k||zi[i-W]!==k||zi[i+W]!==k)continue;
+    const s=(y*cw+x)*4,t=i*4,a=sums[k];a[0]+=LIN[rd[s]];a[1]+=LIN[rd[s+1]];a[2]+=LIN[rd[s+2]];a[3]+=LIN[base[t]];a[4]+=LIN[base[t+1]];a[5]+=LIN[base[t+2]];a[6]++;}
+  const gains=sums.map(a=>a[6]?[0,1,2].map(c=>Math.max(0.6,Math.min(1.7,a[3+c]/Math.max(1e-4,a[c])))):[1,1,1]);
+  const data=new Uint8ClampedArray(base);
+  for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){const X=cx0+x,Y=cy0+y,i=Y*W+X,k=zi[i];if(k<0)continue;
+    let c=0,n=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const XX=X+dx,YY=Y+dy;if(XX<0||YY<0||XX>=W||YY>=H)continue;n++;if(zi[YY*W+XX]===k)c++;}
+    const al=c/n,s=(y*cw+x)*4,t=i*4,g=gains[k];
+    for(let ch2=0;ch2<3;ch2++)data[t+ch2]=enc(LIN[rd[s+ch2]]*g[ch2])*al+base[t+ch2]*(1-al);}
+  finish={rev,data};$('busy').classList.remove('show');render();updateFinishBtns();
+  toast('실사 마감을 했어요. 색 번호는 그대로이고 빛·그림자·질감만 AI가 다듬었어요. 마음에 안 들면 [실사 마감 끄기].',5000);}
+
 /* ---------- ChatGPT app mode (runs inside ChatGPT as an app widget) ---------- */
 let gptApplied=null;
 function b64ToBlob(b64,mime){const bin=atob(b64),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:mime||'image/jpeg'});}
@@ -1255,7 +1373,7 @@ $('gptSend').onclick=()=>{const t=$('gptQ').value.trim();const o=OA();if(!t||!o)
   const parts=zones.filter(z=>z.color).map(z=>z.name+'='+z.color.code).join(', ');
   o.sendFollowUpMessage({prompt:t+(parts?' (현재 칠한 색: '+parts+')':''),scrollToBottom:true});$('gptQ').value='';toast('ChatGPT에 보냈어요');};
 $('gptQ').addEventListener('keydown',e=>{if(e.key==='Enter')$('gptSend').click();});
-$('aiUndo').onclick=()=>{if(!aiSnap)return;src=aiSnap.src;recalcLab(0,0,W,H);zones=aiSnap.zones;zones.forEach(z=>z.dirty=true);active=Math.min(aiSnap.active,zones.length-1);aiSnap=null;
+$('aiUndo').onclick=()=>{if(!aiSnap)return;rev++;src=aiSnap.src;recalcLab(0,0,W,H);zones=aiSnap.zones;zones.forEach(z=>z.dirty=true);active=Math.min(aiSnap.active,zones.length-1);aiSnap=null;
   $('aiUndo').disabled=true;renderZones();updatePicked();renderSummary('summary7');render();toast('AI가 한 것을 되돌렸어요');};
 goStep(1);
 if(OA()){placeAIBox();renderNav();gptApply();$('panel').querySelector('[data-panel="1"] .big-btn').textContent='📷 채팅에 사진을 올리고 ChatGPT에게 요청하세요';}

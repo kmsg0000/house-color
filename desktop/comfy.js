@@ -80,10 +80,11 @@ async function runWorkflow(o) {
   const base = String(o.baseUrl || 'http://127.0.0.1:8188').replace(/\/$/, '');
   const progress = o.onProgress || (() => {});
   const wf = JSON.parse(JSON.stringify(o.workflow));
-  const det = detectNodes(wf);
+  // raw: 앱이 직접 만든 그래프(SAM 등) — 노드 자동 탐지/프롬프트 없이 실행
+  const det = o.raw ? {} : detectNodes(wf);
   const nodes = { ...det, ...(o.nodes || {}) };
   if (!nodes.image || !wf[nodes.image]) throw new Error('이미지 입력 노드가 없습니다: ' + nodes.image);
-  if (!nodes.prompt || !wf[nodes.prompt]) throw new Error('프롬프트 노드가 없습니다: ' + nodes.prompt);
+  if (!o.raw && (!nodes.prompt || !wf[nodes.prompt])) throw new Error('프롬프트 노드가 없습니다: ' + nodes.prompt);
   const clientId = randomUUID();
   const deadline = Date.now() + (o.timeoutMs || 15 * 60 * 1000);
   let promptId = null, ws = null;
@@ -103,7 +104,7 @@ async function runWorkflow(o) {
     const up = await jfetch(base + '/upload/image', { method: 'POST', body: fd, signal: o.signal }, 60000);
     wf[nodes.image].inputs.image = up.subfolder ? `${up.subfolder}/${up.name}` : up.name;
     // 2) prompt / resolution / seed
-    wf[nodes.prompt].inputs.text = String(o.prompt || '');
+    if (nodes.prompt && wf[nodes.prompt]) wf[nodes.prompt].inputs.text = String(o.prompt || '');
     if (nodes.scale && wf[nodes.scale] && wf[nodes.scale].inputs && o.megapixels) wf[nodes.scale].inputs.megapixels = Number(o.megapixels);
     for (const id of Object.keys(wf)) {
       const inp = wf[id].inputs || {};
@@ -175,4 +176,44 @@ async function runWorkflow(o) {
   }
 }
 
-module.exports = { detectNodes, runWorkflow, systemStats, DEFAULT_NODES };
+// ---------- 정밀 선택: ComfyUI 기본 내장 SAM 3.1 (SAM3_Detect) ----------
+//  필요: ComfyUI 최신 버전 + models/checkpoints/sam3.1_multiplex_fp16.safetensors
+//  점(포함/제외)을 주면 그 표면의 마스크(흑백 PNG)를 돌려준다. 색은 앱이 칠하므로 컬러칩 색은 그대로.
+const SAM_CKPT = 'sam3.1_multiplex_fp16.safetensors';
+const clampPts = (a, n) => (Array.isArray(a) ? a : []).slice(0, n)
+  .map(p => ({ x: Math.max(0, Math.round(Number(p && p.x))), y: Math.max(0, Math.round(Number(p && p.y))) }))
+  .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+
+function buildSamGraph({ positive, negative, text, ckpt, threshold }) {
+  const pos = clampPts(positive, 16), neg = clampPts(negative, 16);
+  if (!pos.length && !(text && String(text).trim())) throw new Error('정밀 선택할 점이 없어요.');
+  const det = { model: ['1', 0], image: ['2', 0], threshold: Number(threshold) || 0.5, refine_iterations: 2, individual_masks: false };
+  const g = {
+    '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: ckpt || SAM_CKPT } },
+    '2': { class_type: 'LoadImage', inputs: { image: '' } },
+    '4': { class_type: 'SAM3_Detect', inputs: det },
+    '5': { class_type: 'MaskToImage', inputs: { mask: ['4', 0] } },
+    '6': { class_type: 'SaveImage', inputs: { images: ['5', 0], filename_prefix: 'housecolor_mask' } },
+  };
+  if (pos.length) det.positive_coords = JSON.stringify(pos);
+  if (neg.length) det.negative_coords = JSON.stringify(neg);
+  if (!pos.length) { g['3'] = { class_type: 'CLIPTextEncode', inputs: { text: String(text).slice(0, 200), clip: ['1', 1] } }; det.conditioning = ['3', 0]; }
+  return g;
+}
+
+function samFriendly(e, ckpt) {
+  const m = String(e && e.message || e);
+  if (/SAM3_Detect/.test(m) && /not found|does not exist|invalid|Cannot execute/i.test(m)) return new Error('이 ComfyUI 에는 SAM 3.1 노드가 없어요. ComfyUI 를 최신 버전으로 업데이트해 주세요.');
+  if (/ckpt_name|not in list|value_not_in_list/i.test(m)) return new Error(`SAM 3.1 모델 파일이 없어요. ${ckpt || SAM_CKPT} 를 ComfyUI/models/checkpoints 폴더에 넣어 주세요.`);
+  return e instanceof Error ? e : new Error(m);
+}
+
+/** @returns {Promise<{image:Buffer,mime:string}>} 흑백 마스크 PNG (흰색=선택) */
+async function segment(o) {
+  const graph = buildSamGraph(o);
+  try {
+    return await runWorkflow({ baseUrl: o.baseUrl, workflow: graph, raw: true, nodes: { image: '2', output: '6' }, image: o.image, onProgress: o.onProgress, signal: o.signal, timeoutMs: 5 * 60 * 1000 });
+  } catch (e) { throw samFriendly(e, o.ckpt); }
+}
+
+module.exports = { detectNodes, runWorkflow, systemStats, segment, buildSamGraph, DEFAULT_NODES, SAM_CKPT };
