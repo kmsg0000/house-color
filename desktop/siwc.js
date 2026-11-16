@@ -220,4 +220,50 @@ async function ask(prompt, imageB64, model) {
   return { text, model };
 }
 
-module.exports = { signIn, signOut, status, ask, listModels };
+/** AI 지우기: 원본(PNG) + 마스크(PNG, 지울 곳 투명) → 새 이미지(base64 PNG). Responses API 의 image_generation 도구 사용 */
+async function editImage(imageB64, maskB64, prompt, model) {
+  const tok = await accessToken();
+  if (!model) { const ms = await listModels(); model = ms[0]; if (!model) throw new Error('사용할 수 있는 ChatGPT 모델이 없어요.'); }
+  const r = await fetch(`${RESOURCE}/responses`, {
+    method: 'POST', redirect: 'error',
+    headers: { authorization: `Bearer ${tok}`, 'content-type': 'application/json', accept: 'text/event-stream' },
+    body: JSON.stringify({
+      model, store: false, stream: true,
+      tools: [{ type: 'image_generation', input_image_mask: { image_url: 'data:image/png;base64,' + maskB64 }, quality: 'high', output_format: 'png' }],
+      tool_choice: { type: 'image_generation' },
+      input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }, { type: 'input_image', image_url: 'data:image/png;base64,' + imageB64 }] }],
+    }),
+    signal: AbortSignal.timeout(300000),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    const msg = (j.error && (j.error.message || j.error.code)) || j.error || ('HTTP ' + r.status);
+    throw new Error(r.status === 429 ? 'ChatGPT 구독 사용량 한도에 도달했어요. 잠시 후 다시 해 주세요.' : String(msg));
+  }
+  const reader = r.body.getReader(); const dec = new TextDecoder();
+  let buf = '', image = null;
+  const take = (item) => { if (item && item.type === 'image_generation_call' && typeof item.result === 'string' && item.result) image = item.result; };
+  outer: while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+      const data = chunk.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('\n');
+      if (!data || data === '[DONE]') continue;
+      let ev; try { ev = JSON.parse(data); } catch { continue; }
+      if (ev.type === 'response.output_item.done') take(ev.item);
+      else if (ev.type === 'response.completed') { ((ev.response && ev.response.output) || []).forEach(take); break outer; }
+      else if (ev.type === 'response.failed' || ev.type === 'error') {
+        const e = ev.response && ev.response.error || ev.error || ev;
+        throw new Error((e && (e.message || e.code)) || 'ChatGPT 이미지 생성 실패');
+      }
+    }
+  }
+  try { reader.cancel(); } catch { /* ignore */ }
+  if (!image) throw new Error('ChatGPT가 이미지를 돌려주지 않았어요. (구독 로그인으로 이미지 편집이 허용되지 않을 수 있어요)');
+  return { image };
+}
+
+module.exports = { signIn, signOut, status, ask, listModels, editImage };

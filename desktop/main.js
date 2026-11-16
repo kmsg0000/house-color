@@ -35,6 +35,7 @@ ipcMain.handle('siwc:status', wrap(() => siwc.status()));
 ipcMain.handle('siwc:signIn', wrap(() => siwc.signIn()));
 ipcMain.handle('siwc:signOut', wrap(() => siwc.signOut()));
 ipcMain.handle('siwc:models', wrap(() => siwc.listModels()));
+ipcMain.handle('siwc:edit', wrap((img, mask, prompt, model) => siwc.editImage(String(img), String(mask), String(prompt), model ? String(model) : '')));
 ipcMain.handle('siwc:ask', wrap((p, img, model) => siwc.ask(String(p), String(img), model ? String(model) : '')));
 
 app.whenReady().then(() => {

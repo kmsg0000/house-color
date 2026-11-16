@@ -6,5 +6,6 @@ contextBridge.exposeInMainWorld('houseColorDesktop', {
   chatgptSignIn: () => ipcRenderer.invoke('siwc:signIn'),
   chatgptSignOut: () => ipcRenderer.invoke('siwc:signOut'),
   chatgptModels: () => ipcRenderer.invoke('siwc:models'),
+  chatgptEditImage: (imageB64, maskB64, prompt, model) => ipcRenderer.invoke('siwc:edit', imageB64, maskB64, prompt, model),
   chatgptAsk: (prompt, imageB64, model) => ipcRenderer.invoke('siwc:ask', prompt, imageB64, model),
 });

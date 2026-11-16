@@ -172,6 +172,8 @@ summary{cursor:pointer;font-weight:700;color:var(--mute)}
         <button class="btn" id="btnUnpaintMode">🧽 빨간 칠 지우기</button>
       </div>
       <button class="big-btn red" id="btnErase" style="margin-top:.8rem">✨ 칠한 부분 지우기</button>
+      <div class="count" id="eraseMode" style="margin-top:.4rem"></div>
+      <button class="btn hidden" id="btnEraseBasic" style="margin-top:.4rem">기본 방식으로 지우기 (AI 없이)</button>
       <div class="row" style="margin-top:.6rem">
         <button class="btn" id="btnClearRed">빨간 칠 모두 취소</button>
         <button class="btn" id="btnUndoErase" disabled>↩ 지운 것 되돌리기</button>
@@ -254,7 +256,7 @@ summary{cursor:pointer;font-weight:700;color:var(--mute)}
       <button class="big-btn" id="siwcIn" style="background:#000">ChatGPT로 로그인</button>
       <button class="btn hidden" id="siwcOut">로그아웃</button>
     </div>
-    <details><summary>모델 이름 (고급)</summary><input class="search" id="cfgModel" style="margin-top:.5rem"></details>
+    <details><summary>모델 이름 (고급)</summary><div class="count" style="margin-top:.4rem">명령 이해용 모델</div><input class="search" id="cfgModel"><div class="count" style="margin-top:.4rem">AI 지우기용 이미지 모델</div><input class="search" id="cfgImgModel"></details>
     <p class="count" id="cfgHelp" style="margin:0"></p>
     <div class="row"><button class="btn" id="cfgClear">키 지우기</button><button class="big-btn" id="cfgSave">저장</button></div>
   </div>
@@ -580,7 +582,7 @@ function goStep(s){
   document.querySelectorAll('[data-panel]').forEach(p=>p.classList.toggle('hidden',+p.dataset.panel!==s));
   document.querySelectorAll('.step').forEach(b=>{const n=+b.dataset.s;b.classList.toggle('on',n===s);b.classList.toggle('done',n<s&&n<=maxStep);b.disabled=n>maxStep;});
   if(typeof refreshAIBox==='function')refreshAIBox();
-  if(s===2)eraseTool='paint',syncEraseBtns();
+  if(s===2){eraseTool='paint';syncEraseBtns();if(typeof updateEraseMode==='function')updateEraseMode();}
   if(s===4){renderZones();renderSets();renderFams();renderGrid();updatePicked();}
   if(s===5)renderSummary();
   if(s===3)renderZones();
@@ -734,7 +736,69 @@ document.querySelectorAll('[data-size]').forEach(b=>b.onclick=()=>{eraseSize=+b.
 $('btnClearRed').onclick=()=>{redMask.fill(0);render();};
 let worker=null;
 function getWorker(){if(worker)return worker;const blob=new Blob([$('workerSrc').textContent],{type:'text/javascript'});worker=new Worker(URL.createObjectURL(blob));return worker;}
-$('btnErase').onclick=()=>doErase();
+$('btnErase').onclick=()=>eraseAuto();
+$('btnEraseBasic').onclick=()=>doErase();
+function aiEraseProvider(){if(!standalone||!hasKey())return null;const p=aiCfg.provider;return(p==='openai'||p==='gemini'||p==='siwc')?p:null;}
+function updateEraseMode(){const p=aiEraseProvider();
+  $('btnErase').textContent=p?'✨ AI로 지우기 ('+PROVIDERS[p].name+')':'✨ 칠한 부분 지우기';
+  $('btnEraseBasic').classList.toggle('hidden',!p);
+  $('eraseMode').textContent=p?'AI가 가려진 뒤쪽(벽·창문·바닥)을 새로 그려 넣습니다. 칠하지 않은 부분은 원본 그대로 유지돼요. (10~60초)'
+   :(standalone?'지금은 기본 방식(주변을 이어 붙임)입니다. 뒤 배경까지 살리려면 ⚙ AI 설정에서 ChatGPT 로그인 또는 ChatGPT·Gemini 키를 넣어 주세요.'
+     :'지금은 기본 방식(주변을 이어 붙임)입니다. 뒤 배경까지 살려 주는 AI 지우기는 PC·휴대폰 설치판에서 ChatGPT 또는 Gemini로 쓸 수 있어요.');}
+function eraseAuto(){return aiEraseProvider()?aiErase():doErase();}
+const ERASE_PROMPT='This is a photo of a building exterior. Remove every object inside the marked area (trees, bushes, cars, poles, wires, people, signs) and reconstruct what is hidden behind them: continue the building facade, walls, windows, balconies, railings, pipes, ground and sky exactly as the surrounding architecture implies, with the same materials, colours, lighting, shadows, perspective and photo grain. Do not add any new objects. Keep everything outside the marked area identical. Photorealistic.';
+function canvasB64(c,type){return c.toDataURL(type||'image/png').split(',')[1];}
+async function aiErase(){
+  let x0=W,y0=H,x1=-1,y1=-1,cnt=0;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(redMask[y*W+x]){cnt++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+  if(!cnt){toast('먼저 지울 것을 빨갛게 칠해 주세요');return false;}
+  const prov=aiEraseProvider();
+  // crop with generous context so the AI understands the architecture
+  const bw=x1-x0+1,bh=y1-y0+1,mg=Math.round(Math.max(bw,bh)*0.6+48);
+  let cx0=Math.max(0,x0-mg),cy0=Math.max(0,y0-mg),cx1=Math.min(W-1,x1+mg),cy1=Math.min(H-1,y1+mg);
+  const cw=cx1-cx0+1,ch=cy1-cy0+1,sc=Math.min(1,1024/Math.max(cw,ch)),sw=Math.max(16,Math.round(cw*sc)),sh=Math.max(16,Math.round(ch*sc));
+  // dilated mask (covers halos / leaf edges)
+  const D=Math.max(3,Math.round(Math.max(W,H)/300));const dm=new Uint8Array(W*H);
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){if(!redMask[y*W+x])continue;for(let dy=-D;dy<=D;dy++){const Y=y+dy;if(Y<0||Y>=H)continue;for(let dx=-D;dx<=D;dx++){const X=x+dx;if(X>=0&&X<W)dm[Y*W+X]=1;}}}
+  const full=document.createElement('canvas');full.width=W;full.height=H;full.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(src),W,H),0,0);
+  const img=document.createElement('canvas');img.width=sw;img.height=sh;const gi=img.getContext('2d');gi.imageSmoothingQuality='high';gi.drawImage(full,cx0,cy0,cw,ch,0,0,sw,sh);
+  const mk=document.createElement('canvas');mk.width=sw;mk.height=sh;const gm=mk.getContext('2d');const md=gm.createImageData(sw,sh);
+  for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){const X=Math.min(W-1,cx0+Math.floor(x/sc)),Y=Math.min(H-1,cy0+Math.floor(y/sc)),p=(y*sw+x)*4;const hole=dm[Y*W+X];md.data[p]=0;md.data[p+1]=0;md.data[p+2]=0;md.data[p+3]=hole?0:255;}
+  gm.putImageData(md,0,0);
+  const marked=document.createElement('canvas');marked.width=sw;marked.height=sh;const gk=marked.getContext('2d');gk.drawImage(img,0,0);
+  const kd=gk.getImageData(0,0,sw,sh);for(let i=0;i<sw*sh;i++)if(md.data[i*4+3]===0){kd.data[i*4]=255;kd.data[i*4+1]=0;kd.data[i*4+2]=0;}gk.putImageData(kd,0,0);
+  $('busy').classList.add('show');$('progBar').style.width='30%';$('busyT').textContent='AI가 뒤쪽 배경을 그리는 중… (10~60초)';
+  let outB64=null,err=null;
+  try{
+    const imgModel=(aiCfg.imgModel&&aiCfg._mp===prov?aiCfg.imgModel:'')||PROVIDERS[prov].img;
+    if(prov==='siwc'){const r=await DESK.chatgptEditImage(canvasB64(img),canvasB64(mk),ERASE_PROMPT+' The editable area is given by the transparent pixels of the mask.',(aiCfg.model||'').trim());if(!r.ok)throw new Error(r.error);outB64=r.data.image;}
+    else if(prov==='openai'){
+      const fd=new FormData();const toBlob=c=>new Promise(r=>c.toBlob(r,'image/png'));
+      fd.append('model',imgModel);fd.append('image',await toBlob(img),'image.png');fd.append('mask',await toBlob(mk),'mask.png');fd.append('prompt',ERASE_PROMPT);fd.append('n','1');fd.append('size','auto');
+      const r=await fetch('https://api.openai.com/v1/images/edits',{method:'POST',headers:{authorization:'Bearer '+aiCfg.key.trim()},body:fd});const j=await r.json();
+      if(!r.ok)throw new Error((j.error&&j.error.message)||r.status);outB64=j.data&&j.data[0]&&j.data[0].b64_json;}
+    else{
+      const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(imgModel)+':generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':aiCfg.key.trim()},
+        body:JSON.stringify({contents:[{role:'user',parts:[{text:ERASE_PROMPT+' The first image is the photo. In the second image the area to remove is painted pure red. Return the edited first image (without any red) at the same framing.'},{inline_data:{mime_type:'image/png',data:canvasB64(img)}},{inline_data:{mime_type:'image/png',data:canvasB64(marked)}}]}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});
+      const j=await r.json();if(!r.ok)throw new Error((j.error&&j.error.message)||r.status);
+      const parts=((j.candidates||[])[0]||{}).content?.parts||[];const ip=parts.find(p=>p.inline_data||p.inlineData);outB64=ip&&(ip.inline_data||ip.inlineData).data;}
+    if(!outB64)throw new Error('AI가 이미지를 돌려주지 않았어요');
+  }catch(e){err=e;}
+  if(err){$('busy').classList.remove('show');toast('AI 지우기 실패: '+(err.message||err)+' — [기본 방식으로 지우기]를 써 보세요.',5000);return false;}
+  // composite: AI result only inside the (feathered) mask, original everywhere else
+  const res=await new Promise((ok,no)=>{const im=new Image();im.onload=()=>ok(im);im.onerror=()=>no();im.src='data:image/png;base64,'+outB64;}).catch(()=>null);
+  if(!res){$('busy').classList.remove('show');toast('AI 결과 이미지를 읽지 못했어요');return false;}
+  const rc=document.createElement('canvas');rc.width=cw;rc.height=ch;const gr=rc.getContext('2d');gr.imageSmoothingQuality='high';gr.drawImage(res,0,0,cw,ch);const rd=gr.getImageData(0,0,cw,ch).data;
+  const a=new Float32Array(cw*ch);for(let y=0;y<ch;y++)for(let x=0;x<cw;x++)a[y*cw+x]=dm[(cy0+y)*W+cx0+x];
+  const R=Math.max(2,Math.round(D*0.8)),tmp=new Float32Array(cw*ch);
+  for(let pass=0;pass<2;pass++){for(let y=0;y<ch;y++){let acc=0;for(let x=-R;x<cw;x++){if(x+R<cw)acc+=a[y*cw+x+R];if(x-R-1>=0)acc-=a[y*cw+x-R-1];if(x>=0)tmp[y*cw+x]=acc/(2*R+1);}}
+    for(let x=0;x<cw;x++){let acc=0;for(let y=-R;y<ch;y++){if(y+R<ch)acc+=tmp[(y+R)*cw+x];if(y-R-1>=0)acc-=tmp[(y-R-1)*cw+x];if(y>=0)a[y*cw+x]=acc/(2*R+1);}}}
+  eraseUndo.push(src.slice());if(eraseUndo.length>6)eraseUndo.shift();$('btnUndoErase').disabled=false;
+  for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){let al=a[y*cw+x];if(dm[(cy0+y)*W+cx0+x])al=Math.max(al,0.999);if(al<=0.001)continue;al=Math.min(1,al*1.6);const s=(y*cw+x)*4,t=((cy0+y)*W+cx0+x)*4;
+    src[t]=rd[s]*al+src[t]*(1-al);src[t+1]=rd[s+1]*al+src[t+1]*(1-al);src[t+2]=rd[s+2]*al+src[t+2]*(1-al);}
+  recalcLab(cx0,cy0,cw,ch);zones.forEach(z=>z.dirty=true);redMask.fill(0);$('busy').classList.remove('show');render();
+  toast('AI가 지웠어요! 마음에 안 들면 [지운 것 되돌리기]를 누르세요.',3500);return true;
+}
 function doErase(){return new Promise(resolve=>{
   let x0=W,y0=H,x1=-1,y1=-1,cnt=0;
   for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(redMask[y*W+x]){cnt++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
@@ -854,10 +918,10 @@ document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;if(
 wrap.addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files&&e.dataTransfer.files[0];if(f)openFile(f);});
 /* ---------- AI providers (own key, for installed PC / phone versions) ---------- */
 const PROVIDERS={
-  claude:{name:'Claude',model:'claude-sonnet-5-5',help:'키 발급: console.anthropic.com → API Keys'},
-  openai:{name:'ChatGPT',model:'gpt-6.1-terra',help:'키 발급: platform.openai.com → API keys'},
-  gemini:{name:'Gemini',model:'gemini-flash-latest',help:'키 발급: aistudio.google.com → Get API key'},
-  siwc:{name:'ChatGPT',model:'',help:'로그인 후 브라우저에서 "플랜 사용 허용"을 눌러 주세요. 사용량은 ChatGPT 구독 한도에서 차감됩니다.'}};
+  claude:{name:'Claude',model:'claude-sonnet-5-5',img:null,help:'키 발급: console.anthropic.com → API Keys'},
+  openai:{name:'ChatGPT',model:'gpt-6.1-terra',img:'gpt-image-2',help:'키 발급: platform.openai.com → API keys'},
+  gemini:{name:'Gemini',model:'gemini-flash-latest',img:'gemini-nano-banana-2.1',help:'키 발급: aistudio.google.com → Get API key'},
+  siwc:{name:'ChatGPT',model:'',img:'',help:'로그인 후 브라우저에서 "플랜 사용 허용"을 눌러 주세요. 사용량은 ChatGPT 구독 한도에서 차감됩니다.'}};
 const DESK=window.houseColorDesktop||null; let siwcOn=false,siwcEmail='';
 async function siwcRefresh(){if(!DESK)return;const r=await DESK.chatgptStatus();siwcOn=!!(r.ok&&r.data.connected);siwcEmail=r.ok?r.data.email:'';
   $('siwcState').textContent=siwcOn?('✅ 로그인됨: '+(siwcEmail||'ChatGPT 계정')):'ChatGPT Plus 또는 Pro 구독이 있으면 API 키 없이 쓸 수 있어요.';
@@ -893,9 +957,10 @@ async function keyAsk(prompt,blob,signal){
 }
 function openCfg(){const m=$('aiCfg');m.classList.add('show');$('cfgKey').value=aiCfg.key||'';selProv(aiCfg.provider);}
 function selProv(p){aiCfg.provider=p;const sw=p==='siwc';$('cfgKey').classList.toggle('hidden',sw);$('siwcBox').classList.toggle('hidden',!sw);$('cfgClear').classList.toggle('hidden',sw);if(sw)siwcRefresh();document.querySelectorAll('#provChips button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
-  $('cfgModel').value=aiCfg.model&&aiCfg._mp===p?aiCfg.model:PROVIDERS[p].model;$('cfgModel').placeholder=sw?'비워 두면 자동 선택':'';$('cfgHelp').textContent=PROVIDERS[p].help+' · 사용한 만큼 그 회사에 요금이 청구됩니다.';}
+  $('cfgModel').value=aiCfg.model&&aiCfg._mp===p?aiCfg.model:PROVIDERS[p].model;$('cfgModel').placeholder=sw?'비워 두면 자동 선택':'';
+  const im=PROVIDERS[p].img;$('cfgImgModel').disabled=im===null;$('cfgImgModel').value=im===null?'':(aiCfg.imgModel&&aiCfg._mp===p?aiCfg.imgModel:im);$('cfgImgModel').placeholder=im===null?'Claude는 그림을 그릴 수 없어요 (기본 방식으로 지움)':(sw?'비워 두면 자동 선택':'');$('cfgHelp').textContent=PROVIDERS[p].help+' · 사용한 만큼 그 회사에 요금이 청구됩니다.';}
 document.querySelectorAll('#provChips button').forEach(b=>b.onclick=()=>selProv(b.dataset.p));
-$('cfgSave').onclick=()=>{aiCfg.key=$('cfgKey').value.trim();aiCfg.model=$('cfgModel').value.trim();aiCfg._mp=aiCfg.provider;try{localStorage.setItem('aiCfg',JSON.stringify(aiCfg));}catch(e){}$('aiCfg').classList.remove('show');
+$('cfgSave').onclick=()=>{aiCfg.key=$('cfgKey').value.trim();aiCfg.model=$('cfgModel').value.trim();aiCfg.imgModel=$('cfgImgModel').value.trim();aiCfg._mp=aiCfg.provider;try{localStorage.setItem('aiCfg',JSON.stringify(aiCfg));}catch(e){}$('aiCfg').classList.remove('show');
   toast(hasKey()?PROVIDERS[aiCfg.provider].name+' 연결 준비 완료':'키가 비어 있어요');refreshAIBox();};
 $('cfgClear').onclick=()=>{aiCfg.key='';$('cfgKey').value='';try{localStorage.setItem('aiCfg',JSON.stringify(aiCfg));}catch(e){}toast('키를 지웠어요');refreshAIBox();};
 $('aiCfg').onclick=e=>{if(e.target.id==='aiCfg')$('aiCfg').classList.remove('show');};
@@ -907,7 +972,7 @@ if(DESK){$('provSiwc').classList.remove('hidden');siwcRefresh();
     await siwcRefresh();if(siwcOn&&!r.data.sharing)$('siwcState').textContent+='\n⚠ 플랜 사용이 허용되지 않았어요. 다시 로그인해 "플랜 사용"을 허용해 주세요.';};
   $('siwcOut').onclick=async()=>{await DESK.chatgptSignOut();await siwcRefresh();toast('로그아웃했어요');};}
 let standalone=!(window.claude&&window.claude.use);
-function refreshAIBox(){const avail=!!aiSample||standalone;$('aibox').classList.toggle('hidden',!(avail&&step>=2));$('aiCfgBtn').classList.toggle('hidden',!standalone);
+function refreshAIBox(){if(typeof updateEraseMode==='function')updateEraseMode();const avail=!!aiSample||standalone;$('aibox').classList.toggle('hidden',!(avail&&step>=2));$('aiCfgBtn').classList.toggle('hidden',!standalone);
   if(standalone)$('aiGo').textContent=hasKey()?('AI에게 맡기기 ('+PROVIDERS[aiCfg.provider].name+')'):(DESK?'AI 사용하려면 ⚙ 설정 (ChatGPT 로그인 또는 키)':'AI 사용하려면 키 설정');}
 /* ---------- AI: colour chosen by the user first ---------- */
 let aiColor=null,pkSet=0,pkFam='all';
@@ -1000,7 +1065,7 @@ async function execAI(res){
   for(const a of erases){redMask.fill(0);for(const b of (a.boxes||[])){if(!Array.isArray(b)||b.length<4)continue;
       const x0=Math.floor(P(b[0])*W),y0=Math.floor(P(b[1])*H),x1=Math.ceil(P(b[2])*W),y1=Math.ceil(P(b[3])*H);
       for(let y=Math.max(0,y0);y<=Math.min(H-1,y1);y++)for(let x=Math.max(0,x0);x<=Math.min(W-1,x1);x++)redMask[y*W+x]=1;}
-    if(step!==2){unlock(2);goStep(2);}render();aiSay('🧹 지우는 중이에요…');if(await doErase())did.push('지우기');}
+    if(step!==2){unlock(2);goStep(2);}render();aiSay('🧹 지우는 중이에요…');if(await eraseAuto())did.push('지우기');}
   for(const a of acts.filter(a=>a&&a.type==='select')){const z=findZone(a.part);
     for(const pt of (a.points||[])){if(!Array.isArray(pt))continue;const x=Math.floor(P(pt[0])*W),y=Math.floor(P(pt[1])*H);
       const before=z.count;wand(x,y,false);stats(z);if(z.count>W*H*0.6){doUndo();stats(z);}}
