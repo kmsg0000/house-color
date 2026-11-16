@@ -1154,7 +1154,7 @@ function refreshAIBox(){if(typeof updateEraseMode==='function')updateEraseMode()
   if(aiMode()&&step>=2&&step<=4&&!manualOpen){manualOpen=true;}
   renderNav();
   $('aibox').classList.toggle('hidden',!!OA()||!(avail&&(aiMode()?step===7:step>=2)));$('aiCfgBtn').classList.toggle('hidden',!standalone);
-  if(standalone)$('aiGo').textContent=hasKey()?('AI에게 맡기기 ('+PROVIDERS[aiCfg.provider].name+')'):(DESK?'AI 사용하려면 ⚙ 설정 (ChatGPT 로그인 또는 키)':'AI 사용하려면 키 설정');}
+  if(standalone)$('aiGo').textContent=hasKey()?('AI에게 맡기기 ('+PROVIDERS[aiCfg.provider].name+(segCfg()||['local','remote'].includes(aiEraseProvider())?' + ComfyUI':'')+')'):(DESK?'AI 사용하려면 ⚙ 설정 (ChatGPT 로그인 또는 키)':'AI 사용하려면 키 설정');}
 /* ---------- AI: colour chosen by the user first ---------- */
 let aiColor=null,pkSet=0,pkFam='all';
 function pkRender(){
@@ -1254,10 +1254,10 @@ async function execAI(res){
   const toPx=l=>(Array.isArray(l)?l:[]).filter(pt=>Array.isArray(pt)&&pt.length>=2).slice(0,12).map(pt=>[Math.floor(P(pt[0])*W),Math.floor(P(pt[1])*H)]);
   for(const a of acts.filter(a=>a&&a.type==='select')){const z=findZone(a.part);
     const pts=toPx(a.points),neg=toPx(a.exclude);let precise=false;
-    if(pts.length&&segCfg()){try{aiSay('🎯 ComfyUI 가 칠할 곳을 정밀하게 고르는 중…');const r=await samMask(pts,neg);if(r&&r.reg){close1(r.reg);applyReg(r.reg,false);precise=true;}}catch(e){samFail(e);}}
+    if(pts.length&&segCfg()){try{aiSay('🎯 ComfyUI 가 칠할 곳을 정밀하게 고르는 중…');const r=await samMask(pts,neg);if(r&&r.reg){refineSam(r.reg);applyReg(r.reg,false);precise=true;}}catch(e){samFail(e);}}
     if(!precise){const block=negBlock(neg);
       for(const[x,y]of pts){const reg=safeGrow(x,y,block);if(!reg)continue;applyReg(reg,false);stats(z);if(z.count>W*H*0.6){doUndo();stats(z);}}}
-    lastWand=null;did.push(z.name+' 선택'+(precise?'(정밀)':''));}
+    lastWand=null;did.push(z.name+' 선택'+(precise?' (ComfyUI 정밀 선택)':''));}
   for(const a of acts.filter(a=>a&&a.type==='color')){const z=findZone(a.part);stats(z);
     if(!z.count){continue;}
     let col=(aiColor&&a.code&&String(a.code).replace(/\s+/g,'').toUpperCase()===aiColor.code.replace(/\s+/g,'').toUpperCase())?aiColor:(a.code?chipByCode(a.code,a.set):null);if(!col&&/^[0-9a-f]{6}$/i.test(String(a.hex||'').replace('#','')))col=nearestChip(String(a.hex).replace('#','').toLowerCase(),a.set||SETS[curSet].id);
@@ -1296,11 +1296,36 @@ async function samMask(pos,neg){const c=segCfg();if(!c)return null;
   const hit=pos.some(([x,y])=>reg[y*W+x]);
   if(!hit||cnt<N*0.0005||cnt>N*0.85)return{reg:null,cnt};
   return{reg,cnt};}
+/* SAM 마스크 다듬기: 같은 벽인데 확신이 낮아 빠진 구멍·얼룩을 벽 색과 비슷한 곳만 메운다 (유리·간판·하늘은 색이 달라 안 메움) */
+function refineSam(reg){const N=W*H,step=Math.max(1,(N/30000)|0),ls=[],as=[],bs=[];
+  for(let i=0;i<N;i+=step)if(reg[i]){ls.push(LL[i]);as.push(AA[i]);bs.push(BB[i]);}
+  if(ls.length<30){close1(reg);return reg;}
+  const srt=a=>a.sort((x,y)=>x-y),q=(a,f)=>a[Math.min(a.length-1,(a.length*f)|0)];srt(ls);srt(as);srt(bs);
+  const mA=q(as,0.5),mB=q(bs,0.5),lo=q(ls,0.03)-5,hi=q(ls,0.97)+6,cr=Math.max(7,Math.min(14,(q(as,0.9)-q(as,0.1)+q(bs,0.9)-q(bs,0.1))*0.6+4));
+  const like=i=>LL[i]>=lo&&LL[i]<=hi&&Math.hypot(AA[i]-mA,BB[i]-mB)<cr;
+  // 1) 마스크로 둘러싸인 작은 구멍(얼룩)만, 대부분이 벽 색일 때 메운다. 큰 구멍(창문·유리 띠·간판)은 그대로
+  const out=new Uint8Array(N),st=new Int32Array(N);let sp=0;
+  const push=i=>{if(!reg[i]&&!out[i]){out[i]=1;st[sp++]=i;}};
+  for(let x=0;x<W;x++){push(x);push((H-1)*W+x);}for(let y=0;y<H;y++){push(y*W);push(y*W+W-1);}
+  while(sp){const p=st[--sp],px=p%W;if(px>0)push(p-1);if(px<W-1)push(p+1);if(p>=W)push(p-W);if(p<N-W)push(p+W);}
+  let area=0;for(let i=0;i<N;i++)area+=reg[i];
+  const maxHole=Math.max(60,area*0.02),seen=out;// out 를 방문 표시로 재사용
+  for(let i0=0;i0<N;i0++){if(reg[i0]||seen[i0])continue;const comp=[i0];seen[i0]=1;let k=0,ok=0,big=false;
+    while(k<comp.length){const p=comp[k++];if(like(p))ok++;if(comp.length>maxHole){big=true;}if(big)continue;const px=p%W;
+      const nb=[px>0?p-1:-1,px<W-1?p+1:-1,p>=W?p-W:-1,p<N-W?p+W:-1];for(const n of nb)if(n>=0&&!reg[n]&&!seen[n]){seen[n]=1;comp.push(n);}}
+    if(!big&&ok>=comp.length*0.7)for(const p of comp)reg[p]=1;}
+  // 2) 가장자리에서 아주 조금(사진 크기의 1%)만, 벽 색이고 매끈하게 이어질 때 넓힌다
+  const R=Math.max(2,Math.round(Math.min(W,H)*0.01));let cur=[];
+  const like2=i=>LL[i]>=lo+3&&LL[i]<=hi-3&&Math.hypot(AA[i]-mA,BB[i]-mB)<cr*0.7;
+  for(let i=0;i<N;i++)if(reg[i]){const px=i%W;if((px>0&&!reg[i-1])||(px<W-1&&!reg[i+1])||(i>=W&&!reg[i-W])||(i<N-W&&!reg[i+W]))cur.push(i);}
+  for(let d=1;d<=R&&cur.length;d++){const nx=[];for(const p of cur){const px=p%W;const nb=[px>0?p-1:-1,px<W-1?p+1:-1,p>=W?p-W:-1,p<N-W?p+W:-1];
+      for(const n of nb){if(n<0||reg[n]||!like2(n)||Math.abs(LL[n]-LL[p])>3.5)continue;reg[n]=1;nx.push(n);}}cur=nx;}
+  close1(reg);return reg;}
 function samFail(e){const msg=(e&&e.message)||String(e);
   if(/SAM 3\.1|모델 파일|연결할 수 없|지원하지 않|not found/i.test(msg)){samBroken=true;updateSamBtn();}
   toast('정밀 선택(SAM)이 안 돼서 기본 방식으로 골랐어요: '+msg,6500);}
 async function samTap(x,y){if(samBusy)return;samBusy=true;toast('🎯 정밀하게 고르는 중…',1500);
-  try{const r=await samMask([[x,y]],[]);if(r&&r.reg){close1(r.reg);applyReg(r.reg,false);}else{wand(x,y,false);toast('정밀 선택 결과가 이상해서 기본 방식으로 골랐어요');}}
+  try{const r=await samMask([[x,y]],[]);if(r&&r.reg){refineSam(r.reg);applyReg(r.reg,false);}else{wand(x,y,false);toast('정밀 선택 결과가 이상해서 기본 방식으로 골랐어요');}}
   catch(e){samFail(e);wand(x,y,false);}finally{samBusy=false;}}
 function updateSamBtn(){const b=$('btnSam');const ok=!!segCfg();b.classList.toggle('hidden',!ok);b.textContent='🎯 AI 정밀 선택: '+(samOn?'켜짐':'꺼짐');b.classList.toggle('on',samOn);}
 $('btnSam').onclick=()=>{samOn=!samOn;updateSamBtn();toast(samOn?'누르면 ComfyUI(SAM)가 정확히 잘라서 골라요':'누르면 비슷한 색을 따라 골라요 (기본 방식)');};
