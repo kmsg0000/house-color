@@ -245,8 +245,13 @@ summary{cursor:pointer;font-weight:700;color:var(--mute)}
   <div class="box" style="max-width:30rem;gap:.6rem">
     <b style="font-size:1.2rem">AI 설정</b>
     <p class="count" style="margin:0">사용할 AI를 고르고 API 키를 넣어 주세요. 키는 이 기기에만 저장되고 선택한 AI 회사로만 전송됩니다.</p>
-    <div class="chips" id="provChips"><button data-p="claude">Claude</button><button data-p="openai">ChatGPT</button><button data-p="gemini">Gemini</button></div>
+    <div class="chips" id="provChips"><button data-p="siwc" class="hidden" id="provSiwc">ChatGPT 로그인 (구독)</button><button data-p="claude">Claude</button><button data-p="openai">ChatGPT</button><button data-p="gemini">Gemini</button></div>
     <input class="search" id="cfgKey" type="password" placeholder="API 키" autocomplete="off">
+    <div id="siwcBox" class="hidden" style="display:flex;flex-direction:column;gap:.5rem">
+      <div class="tipbox" id="siwcState" style="white-space:pre-line">ChatGPT Plus 또는 Pro 구독이 있으면 API 키 없이 쓸 수 있어요.</div>
+      <button class="big-btn" id="siwcIn" style="background:#000">ChatGPT로 로그인</button>
+      <button class="btn hidden" id="siwcOut">로그아웃</button>
+    </div>
     <details><summary>모델 이름 (고급)</summary><input class="search" id="cfgModel" style="margin-top:.5rem"></details>
     <p class="count" id="cfgHelp" style="margin:0"></p>
     <div class="row"><button class="btn" id="cfgClear">키 지우기</button><button class="big-btn" id="cfgSave">저장</button></div>
@@ -840,14 +845,22 @@ wrap.addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files
 const PROVIDERS={
   claude:{name:'Claude',model:'claude-sonnet-5-5',help:'키 발급: console.anthropic.com → API Keys'},
   openai:{name:'ChatGPT',model:'gpt-6.1-terra',help:'키 발급: platform.openai.com → API keys'},
-  gemini:{name:'Gemini',model:'gemini-flash-latest',help:'키 발급: aistudio.google.com → Get API key'}};
+  gemini:{name:'Gemini',model:'gemini-flash-latest',help:'키 발급: aistudio.google.com → Get API key'},
+  siwc:{name:'ChatGPT',model:'',help:'로그인 후 브라우저에서 "플랜 사용 허용"을 눌러 주세요. 사용량은 ChatGPT 구독 한도에서 차감됩니다.'}};
+const DESK=window.houseColorDesktop||null; let siwcOn=false,siwcEmail='';
+async function siwcRefresh(){if(!DESK)return;const r=await DESK.chatgptStatus();siwcOn=!!(r.ok&&r.data.connected);siwcEmail=r.ok?r.data.email:'';
+  $('siwcState').textContent=siwcOn?('✅ 로그인됨: '+(siwcEmail||'ChatGPT 계정')):'ChatGPT Plus 또는 Pro 구독이 있으면 API 키 없이 쓸 수 있어요.';
+  $('siwcIn').classList.toggle('hidden',siwcOn);$('siwcOut').classList.toggle('hidden',!siwcOn);if(typeof refreshAIBox==='function')refreshAIBox();}
 let aiCfg={provider:'claude',key:'',model:''};
 try{const c=JSON.parse(localStorage.getItem('aiCfg')||'null');if(c)aiCfg=Object.assign(aiCfg,c);}catch(e){}
-const hasKey=()=>!!(aiCfg.key&&aiCfg.key.trim());
+const hasKey=()=>aiCfg.provider==='siwc'?siwcOn:!!(aiCfg.key&&aiCfg.key.trim());
 function blobToB64(b){return new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(String(fr.result).split(',')[1]);fr.readAsDataURL(b);});}
 function parseJSONLoose(t){t=String(t||'');try{return JSON.parse(t);}catch(e){}const m=t.match(/```(?:json)?\s*([\s\S]*?)```/);if(m){try{return JSON.parse(m[1]);}catch(e){}}
   const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a>=0&&b>a){try{return JSON.parse(t.slice(a,b+1));}catch(e){}}throw{code:'invalid_json'};}
 async function keyAsk(prompt,blob,signal){
+  if(aiCfg.provider==='siwc'){if(!DESK)throw{code:'api',message:'PC 설치판에서만 쓸 수 있어요'};
+    const r=await DESK.chatgptAsk(prompt,await blobToB64(blob),(aiCfg.model||'').trim());if(signal&&signal.aborted)throw{code:'cancelled'};
+    if(!r.ok)throw{code:'api',message:r.error};return parseJSONLoose(r.data.text);}
   const p=aiCfg.provider,key=aiCfg.key.trim(),model=(aiCfg.model||'').trim()||PROVIDERS[p].model,b64=await blobToB64(blob);let r,j,text='';
   try{
   if(p==='claude'){
@@ -868,17 +881,23 @@ async function keyAsk(prompt,blob,signal){
   return parseJSONLoose(text);
 }
 function openCfg(){const m=$('aiCfg');m.classList.add('show');$('cfgKey').value=aiCfg.key||'';selProv(aiCfg.provider);}
-function selProv(p){aiCfg.provider=p;document.querySelectorAll('#provChips button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
-  $('cfgModel').value=aiCfg.model&&aiCfg._mp===p?aiCfg.model:PROVIDERS[p].model;$('cfgHelp').textContent=PROVIDERS[p].help+' · 사용한 만큼 그 회사에 요금이 청구됩니다.';}
+function selProv(p){aiCfg.provider=p;const sw=p==='siwc';$('cfgKey').classList.toggle('hidden',sw);$('siwcBox').classList.toggle('hidden',!sw);$('cfgClear').classList.toggle('hidden',sw);if(sw)siwcRefresh();document.querySelectorAll('#provChips button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
+  $('cfgModel').value=aiCfg.model&&aiCfg._mp===p?aiCfg.model:PROVIDERS[p].model;$('cfgModel').placeholder=sw?'비워 두면 자동 선택':'';$('cfgHelp').textContent=PROVIDERS[p].help+' · 사용한 만큼 그 회사에 요금이 청구됩니다.';}
 document.querySelectorAll('#provChips button').forEach(b=>b.onclick=()=>selProv(b.dataset.p));
 $('cfgSave').onclick=()=>{aiCfg.key=$('cfgKey').value.trim();aiCfg.model=$('cfgModel').value.trim();aiCfg._mp=aiCfg.provider;try{localStorage.setItem('aiCfg',JSON.stringify(aiCfg));}catch(e){}$('aiCfg').classList.remove('show');
   toast(hasKey()?PROVIDERS[aiCfg.provider].name+' 연결 준비 완료':'키가 비어 있어요');refreshAIBox();};
 $('cfgClear').onclick=()=>{aiCfg.key='';$('cfgKey').value='';try{localStorage.setItem('aiCfg',JSON.stringify(aiCfg));}catch(e){}toast('키를 지웠어요');refreshAIBox();};
 $('aiCfg').onclick=e=>{if(e.target.id==='aiCfg')$('aiCfg').classList.remove('show');};
 $('aiCfgBtn').onclick=openCfg;
+if(DESK){$('provSiwc').classList.remove('hidden');siwcRefresh();
+  $('siwcIn').onclick=async()=>{$('siwcIn').disabled=true;$('siwcState').textContent='브라우저에서 ChatGPT에 로그인해 주세요… (끝나면 이 창으로 돌아오세요)';
+    const r=await DESK.chatgptSignIn();$('siwcIn').disabled=false;if(!r.ok){$('siwcState').textContent='로그인 실패: '+r.error;return;}
+    aiCfg.provider='siwc';aiCfg._mp='siwc';try{localStorage.setItem('aiCfg',JSON.stringify(aiCfg));}catch(e){}
+    await siwcRefresh();if(siwcOn&&!r.data.sharing)$('siwcState').textContent+='\n⚠ 플랜 사용이 허용되지 않았어요. 다시 로그인해 "플랜 사용"을 허용해 주세요.';};
+  $('siwcOut').onclick=async()=>{await DESK.chatgptSignOut();await siwcRefresh();toast('로그아웃했어요');};}
 let standalone=!(window.claude&&window.claude.use);
 function refreshAIBox(){const avail=!!aiSample||standalone;$('aibox').classList.toggle('hidden',!(avail&&step>=2));$('aiCfgBtn').classList.toggle('hidden',!standalone);
-  if(standalone)$('aiGo').textContent=hasKey()?('AI에게 맡기기 ('+PROVIDERS[aiCfg.provider].name+')'):'AI 사용하려면 키 설정';}
+  if(standalone)$('aiGo').textContent=hasKey()?('AI에게 맡기기 ('+PROVIDERS[aiCfg.provider].name+')'):(DESK?'AI 사용하려면 ⚙ 설정 (ChatGPT 로그인 또는 키)':'AI 사용하려면 키 설정');}
 /* ---------- AI commands ---------- */
 let aiSample=null,aiDict=null,aiCtl=null;
 (async()=>{try{if(window.claude&&window.claude.use){aiSample=await window.claude.use('sample');
