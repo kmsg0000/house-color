@@ -53,7 +53,7 @@ const TOOLS = [
     description:
       '사용자가 올린 건물 사진에 노루페인트 색을 칠해 보여 주는 앱을 연다. 사진을 직접 보고 actions 를 만들어 넘겨라.\n' +
       '좌표는 사진 기준 0~1000 정규화(x: 왼→오, y: 위→아래).\n' +
-      '- select: 칠할 표면 위의 점 2~6개. 그 표면의 넓고 고른 한가운데에 찍고 창문·문·그림자 경계·모서리·나무는 피한다. 같은 재질이 여러 면(층마다 나뉜 띠, 좌우 벽 등)이면 각 면마다 점을 찍는다.\n' +
+      '- select: 칠할 표면 위의 점 2~6개. 그 표면의 넓고 고른 한가운데에 찍고 창문·문·그림자 경계·모서리·나무는 피한다. 같은 재질이 여러 면(층마다 나뉜 띠, 좌우 벽 등)이면 각 면마다 점을 찍는다. exclude 에는 칠하면 안 되는데 색이 비슷한 곳(흐린 하늘, 유리창, 간판, 옆 건물) 위의 점 0~5개를 넣는다.\n' +
       '- color: 그 부분의 색. 사용자가 색 번호를 말했으면 code 에, 아니면 find_colors 로 실제 노루페인트 색을 찾아 code 를 넣거나 hex 를 넣는다(가장 가까운 컬러칩으로 바뀜).\n' +
       '- erase: 지울 물체(나무·차·전봇대 등)를 감싸는 상자. 사용자가 원할 때만. 가능하면 먼저 너의 이미지 편집 기능으로 물체를 지운 사진을 만들어 그 사진을 photo 로 넘기는 것이 더 자연스럽다.\n' +
       '이전 요청에서 칠한 부분이 있으면 그 부분의 select/color 도 다시 포함해 전체 결과를 한 번에 보내라. part 이름은 짧은 한국어(벽, 지붕, 띠, 창틀 등).',
@@ -70,6 +70,7 @@ const TOOLS = [
               type: { type: 'string', enum: ['erase', 'select', 'color'] },
               part: { type: 'string' },
               points: { type: 'array', items: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 } },
+              exclude: { type: 'array', items: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 }, description: 'select 에서 제외할 곳(하늘·유리·간판) 위의 점' },
               boxes: { type: 'array', items: { type: 'array', items: { type: 'number' }, minItems: 4, maxItems: 4 } },
               code: { type: 'string', description: '노루페인트/PANTONE 색 번호 (예: WT 1001, 19-4052)' },
               hex: { type: 'string', description: 'rrggbb' },

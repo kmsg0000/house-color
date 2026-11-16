@@ -60,6 +60,17 @@ ipcMain.handle('comfy:config', wrap(() => { const c = comfyCfg(); const wf = loa
 ipcMain.handle('comfy:setUrl', wrap(url => { const c = comfyCfg(); c.url = String(url || 'http://127.0.0.1:8188').trim(); saveCfg(c); return c.url; }));
 ipcMain.handle('comfy:setWorkflow', wrap(text => { const wf = JSON.parse(String(text)); const det = comfy.detectNodes(wf); fs.mkdirSync(path.dirname(wfFile()), { recursive: true }); fs.writeFileSync(wfFile(), JSON.stringify(wf)); return det; }));
 ipcMain.handle('comfy:test', wrap(() => comfy.systemStats(comfyCfg().url)));
+async function comfySegment({ image, positive, negative, text }) {
+  const c = comfyCfg();
+  if (comfyJob) throw new Error('이미 ComfyUI 작업이 진행 중이에요.');
+  comfyJob = new AbortController();
+  try { return await comfy.segment({ baseUrl: c.url, image, positive, negative, text, ckpt: c.samCkpt || undefined, signal: comfyJob.signal }); }
+  finally { comfyJob = null; }
+}
+ipcMain.handle('comfy:segment', wrap(async (b64, positive, negative, text) => {
+  const r = await comfySegment({ image: Buffer.from(String(b64), 'base64'), positive, negative, text: text ? String(text) : '' });
+  return { image: r.image.toString('base64'), mime: r.mime };
+}));
 ipcMain.handle('comfy:cancel', wrap(() => { if (comfyJob) comfyJob.abort(); return true; }));
 ipcMain.handle('comfy:run', wrap(async function (b64, prompt, megapixels) {
   const sender = this && this.sender;
@@ -68,7 +79,7 @@ ipcMain.handle('comfy:run', wrap(async function (b64, prompt, megapixels) {
 }));
 
 // ---------- 휴대폰 → 이 PC 중계 (기본 꺼짐) ----------
-const relay = createRelay({ run: o => comfyRun(o, () => {}), stats: () => comfy.systemStats(comfyCfg().url) });
+const relay = createRelay({ run: o => comfyRun(o, () => {}), segment: o => comfySegment(o), stats: () => comfy.systemStats(comfyCfg().url) });
 ipcMain.handle('relay:status', wrap(() => relay.status()));
 ipcMain.handle('relay:start', wrap(async () => { const c = comfyCfg(); if (c.relayToken) relay.setToken(c.relayToken); const s = await relay.start({ port: c.relayPort || 8766 }); c.relayToken = s.token; saveCfg(c); return s; }));
 ipcMain.handle('relay:stop', wrap(() => relay.stop()));

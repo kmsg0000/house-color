@@ -20,7 +20,7 @@ function lanAddresses() {
 }
 const newToken = () => randomBytes(18).toString('base64url');
 
-function createRelay({ run, stats }) {
+function createRelay({ run, stats, segment }) {
   let server = null, token = null, port = 8766, busy = false;
 
   const tokenOk = h => {
@@ -51,15 +51,19 @@ function createRelay({ run, stats }) {
       let s = null; try { s = await stats(); } catch (e) { s = { ok: false, error: e.message }; }
       send(res, 200, { ok: true, app: 'house-color', comfy: s }); return;
     }
-    if (req.method === 'POST' && url.pathname === '/api/edit') {
+    if (req.method === 'POST' && (url.pathname === '/api/edit' || url.pathname === '/api/segment')) {
       if (busy) { send(res, 429, { error: 'PC 가 다른 작업을 처리 중이에요. 잠시 후 다시 해 주세요.' }); return; }
+      if (url.pathname === '/api/segment' && !segment) { send(res, 404, { error: '이 PC 앱은 정밀 선택을 지원하지 않아요. PC 앱을 업데이트해 주세요.' }); return; }
       let size = 0; const chunks = [];
       try {
         for await (const c of req) { size += c.length; if (size > MAX_BODY) throw new Error('사진이 너무 커요.'); chunks.push(c); }
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
         if (typeof body.image !== 'string' || !body.image) throw new Error('image 가 없어요.');
         busy = true;
-        const r = await run({ image: Buffer.from(body.image, 'base64'), prompt: String(body.prompt || ''), megapixels: body.megapixels });
+        const image = Buffer.from(body.image, 'base64');
+        const r = url.pathname === '/api/segment'
+          ? await segment({ image, positive: body.positive, negative: body.negative, text: typeof body.text === 'string' ? body.text.slice(0, 200) : '' })
+          : await run({ image, prompt: String(body.prompt || ''), megapixels: body.megapixels });
         send(res, 200, { image: r.image.toString('base64'), mime: r.mime });
       } catch (e) {
         send(res, 500, { error: String(e && e.message || e) });
