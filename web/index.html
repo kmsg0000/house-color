@@ -32,6 +32,7 @@ main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 27rem;gap:1rem;padd
 @media (max-width:900px){html,body{height:auto} body{display:block} main{display:flex;flex-direction:column;padding:.6rem;gap:.6rem} .panel{overflow:visible} :root{font-size:16px} :root.big{font-size:19px}}
 .hbtn .sm{display:none}
 @media (max-width:600px){header h1{font-size:1rem}.hbtn{padding:.3rem .6rem}.hbtn .lg{display:none}.hbtn .sm{display:inline}.step{min-width:4.6rem;font-size:.85rem}}
+:root.in-chatgpt header{display:none}
 .aibox{border:2px solid #cfdcff;background:#f5f8ff;border-radius:14px;padding:.7rem;display:flex;flex-direction:column;gap:.5rem}
 .aibox .t{font-weight:800}
 .airow{display:flex;gap:.4rem}
@@ -160,6 +161,12 @@ summary{cursor:pointer;font-weight:700;color:var(--mute)}
       <h2>2. AI에게 시켜 보세요</h2>
       <p style="margin:.4rem 0 .8rem">나무 지우기, 칠할 곳 찾기, 색칠까지 <b>말 한마디로</b> 됩니다. 결과가 조금 틀리면 아래 <b>✋ 직접 고치기</b>로 손볼 수 있어요.</p>
       <div id="aiSlot"></div>
+      <div id="gptBox" class="aibox hidden">
+        <div class="t">💬 ChatGPT 채팅창에 말씀하세요</div>
+        <p class="count" style="margin:0">예: "창틀은 흰색으로", "벽을 좀 더 밝게", "앞의 나무도 지워줘". 여기 적어도 채팅으로 보내집니다.</p>
+        <div class="airow"><input class="search" id="gptQ" placeholder="ChatGPT에게 보낼 말"><button class="btn" id="gptSend" style="flex:0 0 4.5rem">보내기</button></div>
+        <div class="aisay" id="gptSay"></div>
+      </div>
       <div class="label" style="margin-top:.6rem">지금 칠한 색</div>
       <div class="summary" id="summary7" style="margin-top:.4rem"></div>
       <div class="row" style="margin-top:.6rem"><button class="btn" id="aiUndo" disabled>↩ AI가 한 것 되돌리기</button><button class="btn" id="btnManual">✋ 직접 고치기</button></div>
@@ -591,7 +598,8 @@ let lastWand=null;
 
 /* ---------- steps ---------- */
 let manualOpen=false;
-function aiMode(){return !!(typeof aiSample!=='undefined'&&aiSample)||(typeof standalone!=='undefined'&&standalone&&typeof hasKey==='function'&&hasKey());}
+const OA=()=>(window.openai&&typeof window.openai==='object')?window.openai:null;
+function aiMode(){if(OA())return true;return !!(typeof aiSample!=='undefined'&&aiSample)||(typeof standalone!=='undefined'&&standalone&&typeof hasKey==='function'&&hasKey());}
 function renderNav(){const nav=$('steps');nav.innerHTML='';const ai=aiMode();
   const items=ai?[[1,'사진'],[7,'AI에게 시키기'],[5,'완성']]:[[1,'사진'],[2,'지우기'],[3,'칠할 곳'],[4,'색 고르기'],[5,'완성']];
   const mk=(sn,label,num,cls)=>{const b=document.createElement('button');b.className='step'+(cls?' '+cls:'');b.dataset.s=sn;
@@ -601,7 +609,7 @@ function renderNav(){const nav=$('steps');nav.innerHTML='';const ai=aiMode();
   items.forEach(([sn,l],i)=>mk(sn,l,i+1));
   if(ai&&manualOpen&&src){const sp=document.createElement('span');sp.className='navsep';sp.textContent='✋ 직접 고치기:';nav.appendChild(sp);
     [[2,'지우기'],[3,'칠할 곳'],[4,'색']].forEach(([sn,l])=>mk(sn,l,'',' manual'));}}
-function placeAIBox(){const box=$('aibox');if(!box)return;if(aiMode()){if(box.parentNode!==$('aiSlot'))$('aiSlot').appendChild(box);}else if(box.parentNode!==$('panel')){$('panel').insertBefore(box,$('panel').firstChild);}}
+function placeAIBox(){const box=$('aibox');if(!box)return;if(OA()){box.classList.add('hidden');$('gptBox').classList.remove('hidden');return;}if(aiMode()){if(box.parentNode!==$('aiSlot'))$('aiSlot').appendChild(box);}else if(box.parentNode!==$('panel')){$('panel').insertBefore(box,$('panel').firstChild);}}
 function goStep(s){
   if(!aiMode()&&s>maxStep&&s!==7)return; if(aiMode()&&s!==1&&!src)return; if(!aiMode()&&s===7)s=2; step=s;
   document.querySelectorAll('[data-panel]').forEach(p=>p.classList.toggle('hidden',+p.dataset.panel!==s));
@@ -936,6 +944,7 @@ function finalCanvas(){const c=document.createElement('canvas');c.width=W;c.heig
 $('btnSave').onclick=()=>{const c=finalCanvas();lastUrl=c.toDataURL('image/jpeg',0.92);$('outImg').src=lastUrl;c.toBlob(b=>lastBlob=b,'image/jpeg',0.92);$('modal').classList.add('show');};
 $('mSave').onclick=async()=>{
   const ts=new Date();const name='우리집외벽_'+ts.getFullYear()+String(ts.getMonth()+1).padStart(2,'0')+String(ts.getDate()).padStart(2,'0')+'_'+String(ts.getHours()).padStart(2,'0')+String(ts.getMinutes()).padStart(2,'0')+'.jpg';
+  if(OA()&&OA().uploadFile&&lastBlob){try{const f=new File([lastBlob],name,{type:'image/jpeg'});await OA().uploadFile(f,{library:true});toast('ChatGPT 파일함에 저장했어요. 사진을 길게 누르거나 우클릭해서 기기에도 저장할 수 있어요.',4000);}catch(e){toast('사진을 길게 누르거나 우클릭해서 저장해 주세요.',3500);}return;}
   if(window.AndroidBridge&&AndroidBridge.saveImage){try{const ok=AndroidBridge.saveImage(lastUrl.split(',')[1],name);toast(ok?'사진첩(갤러리)에 저장했어요':'저장에 실패했어요');}catch(e){toast('저장에 실패했어요');}return;}
   if(downloads&&lastBlob){try{await downloads.save({filename:name,data:lastBlob});toast('저장했어요');}catch(e){if(e&&e.code==='declined')return;toast('여기서는 바로 저장이 안 돼요. 사진을 길게 눌러 저장해 주세요.',3500);}return;}
   const a=document.createElement('a');a.href=lastUrl;a.download=name;document.body.appendChild(a);a.click();a.remove();toast('저장했어요 (다운로드 폴더)');
@@ -1011,7 +1020,7 @@ let standalone=!(window.claude&&window.claude.use);
 function refreshAIBox(){if(typeof updateEraseMode==='function')updateEraseMode();const avail=!!aiSample||standalone;placeAIBox();
   if(aiMode()&&step>=2&&step<=4&&!manualOpen){manualOpen=true;}
   renderNav();
-  $('aibox').classList.toggle('hidden',!(avail&&(aiMode()?step===7:step>=2)));$('aiCfgBtn').classList.toggle('hidden',!standalone);
+  $('aibox').classList.toggle('hidden',!!OA()||!(avail&&(aiMode()?step===7:step>=2)));$('aiCfgBtn').classList.toggle('hidden',!standalone);
   if(standalone)$('aiGo').textContent=hasKey()?('AI에게 맡기기 ('+PROVIDERS[aiCfg.provider].name+')'):(DESK?'AI 사용하려면 ⚙ 설정 (ChatGPT 로그인 또는 키)':'AI 사용하려면 키 설정');}
 /* ---------- AI: colour chosen by the user first ---------- */
 let aiColor=null,pkSet=0,pkFam='all';
@@ -1064,8 +1073,9 @@ function findZone(part){part=String(part||'벽').trim()||'벽';let i=zones.findI
 function nearestChip(hex,setId){const set=SETS.find(s=>s.id===setId)||SETS[0];const[r,g,b]=hex2rgb(hex);const t=rgb2lab(r,g,b);let best=null,bd=1e9;
   for(const c of set.colors){const[r2,g2,b2]=hex2rgb(c[2]);const l=rgb2lab(r2,g2,b2);const d=(l[0]-t[0])**2+(l[1]-t[1])**2+(l[2]-t[2])**2;if(d<bd){bd=d;best=c;}}
   return {set:set.id,setName:set.name,code:best[0],name:best[1],hex:best[2]};}
-function chipByCode(code){const n=String(code||'').toUpperCase().replace(/\s+/g,'');if(!n)return null;
-  for(const s of SETS)for(const c of s.colors){const cc=c[0].toUpperCase().replace(/\s+/g,'');if(cc===n||cc===n+'A'||cc+'A'===n)return{set:s.id,setName:s.name,code:c[0],name:c[1],hex:c[2]};}return null;}
+function chipByCode(code,setId){const n=String(code||'').toUpperCase().replace(/\s+/g,'');if(!n)return null;
+  const order=setId?[...SETS.filter(s=>s.id===setId),...SETS.filter(s=>s.id!==setId)]:SETS;
+  for(const s of order)for(const c of s.colors){const cc=c[0].toUpperCase().replace(/\s+/g,'');if(cc===n||cc===n+'A'||cc+'A'===n)return{set:s.id,setName:s.name,code:c[0],name:c[1],hex:c[2]};}return null;}
 async function runAI(){
   if(!aiSample){if(!standalone)return;if(!hasKey()){openCfg();return;}}
   const cmd=$('aiq').value.trim();if(!cmd){toast('무엇을 할지 적거나 말씀해 주세요');return;}
@@ -1114,7 +1124,7 @@ async function execAI(res){
     lastWand=null;did.push(z.name+' 선택');}
   for(const a of acts.filter(a=>a&&a.type==='color')){const z=findZone(a.part);stats(z);
     if(!z.count){continue;}
-    let col=(aiColor&&a.code&&String(a.code).replace(/\s+/g,'').toUpperCase()===aiColor.code.replace(/\s+/g,'').toUpperCase())?aiColor:(a.code?chipByCode(a.code):null);if(!col&&/^[0-9a-f]{6}$/i.test(String(a.hex||'').replace('#','')))col=nearestChip(String(a.hex).replace('#','').toLowerCase(),a.set||SETS[curSet].id);
+    let col=(aiColor&&a.code&&String(a.code).replace(/\s+/g,'').toUpperCase()===aiColor.code.replace(/\s+/g,'').toUpperCase())?aiColor:(a.code?chipByCode(a.code,a.set):null);if(!col&&/^[0-9a-f]{6}$/i.test(String(a.hex||'').replace('#','')))col=nearestChip(String(a.hex).replace('#','').toLowerCase(),a.set||SETS[curSet].id);
     if(col){pushUndo();z.color=col;colored=true;did.push(z.name+' → '+col.code);}}
   // user picked a colour first but the AI only selected areas -> paint them with that colour
   if(aiColor&&!colored){for(const a of acts.filter(a=>a&&a.type==='select')){const z=findZone(a.part);stats(z);if(z.count){pushUndo();z.color=aiColor;colored=true;did.push(z.name+' → '+aiColor.code);}}}
@@ -1126,9 +1136,35 @@ async function execAI(res){
   aiSay((say?say+'\n':'')+(did.length?'✔ '+did.join(', '):'할 수 있는 동작을 찾지 못했어요. 조금 더 구체적으로 말씀해 주세요.'));
   $('aiq').value='';
 }
+/* ---------- ChatGPT app mode (runs inside ChatGPT as an app widget) ---------- */
+let gptApplied=null;
+function b64ToBlob(b64,mime){const bin=atob(b64),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:mime||'image/jpeg'});}
+function openBlob(blob){return new Promise((ok,no)=>{const url=URL.createObjectURL(blob),img=new Image();img.onload=()=>{loadImage(img);URL.revokeObjectURL(url);ok();};img.onerror=()=>no(new Error('사진을 열 수 없어요'));img.src=url;});}
+async function gptApply(){
+  const o=OA();if(!o)return;const out=o.toolOutput,meta=o.toolResponseMetadata||{};
+  if(!out||!out.photo)return;const key=JSON.stringify(out).length+':'+(out.photo.file_id||'');if(gptApplied===key)return;gptApplied=key;
+  document.documentElement.classList.add('in-chatgpt');
+  try{
+    let blob=null;
+    if(meta.photo_b64)blob=b64ToBlob(meta.photo_b64,meta.photo_mime);
+    if(!blob&&out.photo.file_id&&o.getFileDownloadUrl){try{const r=await o.getFileDownloadUrl({fileId:out.photo.file_id});const res=await fetch(r.downloadUrl);if(res.ok)blob=await res.blob();}catch(e){}}
+    if(!blob&&out.photo.download_url){try{const res=await fetch(out.photo.download_url);if(res.ok)blob=await res.blob();}catch(e){}}
+    if(!blob){$('gptSay').textContent='사진을 불러오지 못했어요. 채팅에 사진을 다시 올리고 요청해 주세요.';$('gptSay').classList.add('show');return;}
+    await openBlob(blob);
+    $('gptSay').textContent='🤖 ChatGPT의 지시를 적용하는 중…';$('gptSay').classList.add('show');
+    await execAI({say:out.say||'',actions:out.actions||[]});
+    $('gptSay').textContent=(out.say||'')+(out.resolved&&out.resolved.length?'\n'+out.resolved.map(r=>'• '+r.part+': '+r.collection+' '+r.code+(r.name?' ('+r.name+')':'')).join('\n'):'');
+  }catch(e){$('gptSay').textContent='적용 중 문제가 생겼어요: '+(e.message||e);$('gptSay').classList.add('show');}
+}
+window.addEventListener('openai:set_globals',()=>{if(OA()){placeAIBox();gptApply();}});
+$('gptSend').onclick=()=>{const t=$('gptQ').value.trim();const o=OA();if(!t||!o)return;
+  const parts=zones.filter(z=>z.color).map(z=>z.name+'='+z.color.code).join(', ');
+  o.sendFollowUpMessage({prompt:t+(parts?' (현재 칠한 색: '+parts+')':''),scrollToBottom:true});$('gptQ').value='';toast('ChatGPT에 보냈어요');};
+$('gptQ').addEventListener('keydown',e=>{if(e.key==='Enter')$('gptSend').click();});
 $('aiUndo').onclick=()=>{if(!aiSnap)return;src=aiSnap.src;recalcLab(0,0,W,H);zones=aiSnap.zones;zones.forEach(z=>z.dirty=true);active=Math.min(aiSnap.active,zones.length-1);aiSnap=null;
   $('aiUndo').disabled=true;renderZones();updatePicked();renderSummary('summary7');render();toast('AI가 한 것을 되돌렸어요');};
 goStep(1);
+if(OA()){placeAIBox();renderNav();gptApply();$('panel').querySelector('[data-panel="1"] .big-btn').textContent='📷 채팅에 사진을 올리고 ChatGPT에게 요청하세요';}
 </script>
 </body>
 </html>

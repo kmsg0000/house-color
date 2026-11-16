@@ -1,0 +1,13 @@
+{
+  "name": "house-color-chatgpt-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "우리집 외벽 색 바꾸기 — ChatGPT 앱(MCP 서버)",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node node-server.mjs",
+    "deploy:cloudflare": "npx wrangler deploy"
+  },
+  "engines": { "node": ">=20" }
+}

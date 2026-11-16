@@ -1,0 +1,4 @@
+# Cloudflare Workers 로 무료 배포할 때 사용 (npx wrangler deploy)
+name = "house-color-mcp"
+main = "server.mjs"
+compatibility_date = "2026-11-01"

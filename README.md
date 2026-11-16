@@ -3,6 +3,8 @@
 건물 사진에 노루페인트(노루컬러가이드 · Cover all · NR · PANTONE, 총 6,864색)를 칠해 보는 프로그램입니다.
 이 폴더 하나로 **안드로이드 APK**, **Windows 설치파일(.exe)**, **Mac 설치파일(.dmg)** 을 만들 수 있습니다.
 
+> **ChatGPT 안에서 쓰기(API 키 없이 ChatGPT 구독으로):** `chatgpt-app/README.md` 를 보세요.
+
 > 그냥 PC에서 바로 쓰고 싶다면: `web/index.html` 파일을 크롬이나 엣지로 열면(더블클릭) 설치 없이 바로 실행됩니다.
 
 ---
