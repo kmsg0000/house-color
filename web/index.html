@@ -26,6 +26,8 @@ header .sp{flex:1}
 .step.on .n{background:var(--accent);color:#fff}
 .step.done .n{background:var(--green);color:#fff}
 .step:disabled{opacity:.45;cursor:default}
+.step.manual{flex:0 0 auto;min-width:0;border-style:dashed;font-size:.85rem}
+.navsep{align-self:center;color:var(--mute);font-weight:700;padding:0 .2rem;white-space:nowrap;font-size:.85rem}
 main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 27rem;gap:1rem;padding:1rem;min-height:0}
 @media (max-width:900px){html,body{height:auto} body{display:block} main{display:flex;flex-direction:column;padding:.6rem;gap:.6rem} .panel{overflow:visible} :root{font-size:16px} :root.big{font-size:19px}}
 .hbtn .sm{display:none}
@@ -117,13 +119,7 @@ summary{cursor:pointer;font-weight:700;color:var(--mute)}
   <button class="hbtn" id="btnBig">가<span class="lg"> 글씨 크게</span><span class="sm">+</span></button>
   <button class="hbtn" id="btnHelp"><span class="lg">도움말</span><span class="sm">?</span></button>
 </header>
-<nav class="steps" id="steps">
-  <button class="step on" data-s="1"><span class="n">1</span>사진</button>
-  <button class="step" data-s="2" disabled><span class="n">2</span>지우기</button>
-  <button class="step" data-s="3" disabled><span class="n">3</span>칠할 곳</button>
-  <button class="step" data-s="4" disabled><span class="n">4</span>색 고르기</button>
-  <button class="step" data-s="5" disabled><span class="n">5</span>완성</button>
-</nav>
+<nav class="steps" id="steps"></nav>
 
 <main>
   <section class="viewer" id="viewer">
@@ -157,6 +153,17 @@ summary{cursor:pointer;font-weight:700;color:var(--mute)}
       <input type="file" id="file" accept="image/*" hidden>
       <div class="tipbox" style="margin-top:.9rem">💡 건물 정면이 잘 보이고, 밝은 낮에 찍은 사진이 가장 잘 됩니다.<br>사진은 이 기기 안에서만 처리되고 어디에도 보내지지 않아요.</div>
       <div class="navrow"><button class="big-btn" id="n1" disabled>다음 →</button></div>
+    </div>
+
+    <!-- AI STEP -->
+    <div data-panel="7" class="hidden">
+      <h2>2. AI에게 시켜 보세요</h2>
+      <p style="margin:.4rem 0 .8rem">나무 지우기, 칠할 곳 찾기, 색칠까지 <b>말 한마디로</b> 됩니다. 결과가 조금 틀리면 아래 <b>✋ 직접 고치기</b>로 손볼 수 있어요.</p>
+      <div id="aiSlot"></div>
+      <div class="label" style="margin-top:.6rem">지금 칠한 색</div>
+      <div class="summary" id="summary7" style="margin-top:.4rem"></div>
+      <div class="row" style="margin-top:.6rem"><button class="btn" id="aiUndo" disabled>↩ AI가 한 것 되돌리기</button><button class="btn" id="btnManual">✋ 직접 고치기</button></div>
+      <div class="navrow"><button class="big-btn light" id="b7">← 사진</button><button class="big-btn" id="n7">완성 →</button></div>
     </div>
 
     <!-- STEP 2 -->
@@ -583,10 +590,23 @@ let curSet=0,curFam='all',query='';
 let lastWand=null;
 
 /* ---------- steps ---------- */
+let manualOpen=false;
+function aiMode(){return !!(typeof aiSample!=='undefined'&&aiSample)||(typeof standalone!=='undefined'&&standalone&&typeof hasKey==='function'&&hasKey());}
+function renderNav(){const nav=$('steps');nav.innerHTML='';const ai=aiMode();
+  const items=ai?[[1,'사진'],[7,'AI에게 시키기'],[5,'완성']]:[[1,'사진'],[2,'지우기'],[3,'칠할 곳'],[4,'색 고르기'],[5,'완성']];
+  const mk=(sn,label,num,cls)=>{const b=document.createElement('button');b.className='step'+(cls?' '+cls:'');b.dataset.s=sn;
+    if(num){const n=document.createElement('span');n.className='n';n.textContent=num;b.appendChild(n);}b.appendChild(document.createTextNode(label));
+    const ok=sn===1||(ai?!!src:sn<=maxStep);b.disabled=!ok;if(sn===step)b.classList.add('on');else if(ok&&sn!==1&&!ai&&sn<step)b.classList.add('done');
+    if(ai&&src&&sn===1&&step!==1)b.classList.add('done');b.onclick=()=>goStep(sn);nav.appendChild(b);};
+  items.forEach(([sn,l],i)=>mk(sn,l,i+1));
+  if(ai&&manualOpen&&src){const sp=document.createElement('span');sp.className='navsep';sp.textContent='✋ 직접 고치기:';nav.appendChild(sp);
+    [[2,'지우기'],[3,'칠할 곳'],[4,'색']].forEach(([sn,l])=>mk(sn,l,'',' manual'));}}
+function placeAIBox(){const box=$('aibox');if(!box)return;if(aiMode()){if(box.parentNode!==$('aiSlot'))$('aiSlot').appendChild(box);}else if(box.parentNode!==$('panel')){$('panel').insertBefore(box,$('panel').firstChild);}}
 function goStep(s){
-  if(s>maxStep)return; step=s;
+  if(!aiMode()&&s>maxStep&&s!==7)return; if(aiMode()&&s!==1&&!src)return; if(!aiMode()&&s===7)s=2; step=s;
   document.querySelectorAll('[data-panel]').forEach(p=>p.classList.toggle('hidden',+p.dataset.panel!==s));
-  document.querySelectorAll('.step').forEach(b=>{const n=+b.dataset.s;b.classList.toggle('on',n===s);b.classList.toggle('done',n<s&&n<=maxStep);b.disabled=n>maxStep;});
+  renderNav();placeAIBox();
+  if(s===7)renderSummary('summary7');
   if(typeof refreshAIBox==='function')refreshAIBox();
   if(s===2){eraseTool='paint';syncEraseBtns();if(typeof updateEraseMode==='function')updateEraseMode();}
   if(s===4){renderZones();renderSets();renderFams();renderGrid();updatePicked();}
@@ -596,12 +616,14 @@ function goStep(s){
   render();
 }
 function unlock(s){if(s>maxStep)maxStep=s;}
-document.querySelectorAll('.step').forEach(b=>b.onclick=()=>goStep(+b.dataset.s));
+$('b7').onclick=()=>goStep(1);
+$('n7').onclick=()=>{if(!zones.some(z=>z.color)){toast('먼저 AI에게 색칠을 시켜 보세요');return;}unlock(5);goStep(5);};
+$('btnManual').onclick=()=>{manualOpen=true;unlock(4);goStep(zones.some(z=>z.count)?3:2);toast('위쪽의 지우기 · 칠할 곳 · 색 탭에서 손으로 고칠 수 있어요',3200);};
 $('n1').onclick=()=>{unlock(2);goStep(2);};
 $('b2').onclick=()=>goStep(1); $('n2').onclick=()=>{unlock(3);goStep(3);};
 $('b3').onclick=()=>goStep(2); $('n3').onclick=()=>{const z=zones[active];stats(z);if(!z||!z.count){toast('먼저 사진에서 칠할 벽을 눌러 주세요');return;}unlock(4);goStep(4);};
 $('b4').onclick=()=>goStep(3); $('n4').onclick=()=>{if(!zones.some(z=>z.color)){toast('색을 하나 골라 주세요');return;}unlock(5);goStep(5);};
-$('b5').onclick=()=>goStep(4);
+$('b5').onclick=()=>goStep(aiMode()?7:4);
 
 /* ---------- image loading ---------- */
 $('btnPick').onclick=()=>$('file').click();
@@ -621,7 +643,9 @@ function loadImage(img){
   zones=[];active=-1;zoneSeq=0;undoStack=[];eraseUndo=[];redMask=new Uint8Array(W*H);lastWand=null;addZone();
   $('empty').style.display='none';cv.style.display='block';$('viewer').classList.add('has-img');
   zoom=1;fit();maxStep=2;$('n1').disabled=false;$('btnUndoErase').disabled=true;
-  goStep(2); toast('사진이 열렸어요. 가리는 것이 없으면 [다음]을 누르세요.',3200);
+  manualOpen=false;
+  if(aiMode()){goStep(7);toast('사진이 열렸어요. AI에게 무엇을 할지 말씀해 보세요.',3200);}
+  else{goStep(2);toast('사진이 열렸어요. 가리는 것이 없으면 [다음]을 누르세요.',3200);}
 }
 function recalcLab(x0,y0,w,h){for(let y=y0;y<y0+h;y++)for(let x=x0;x<x0+w;x++){const i=y*W+x,p=i*4;const l=rgb2lab(src[p],src[p+1],src[p+2]);LL[i]=l[0];AA[i]=l[1];BB[i]=l[2];}}
 
@@ -898,7 +922,7 @@ function updatePicked(){const z=zones[active],c=z&&z.color;$('pkChip').style.bac
   $('pkS').textContent=c?(c.setName+' · '+z.name):'아래 색을 누르면 바로 바뀝니다';}
 
 /* ---------- step 5 ---------- */
-function renderSummary(){const el=$('summary');el.innerHTML='';
+function renderSummary(id){const el=$(id||'summary');el.innerHTML='';
   zones.filter(z=>z.color).forEach(z=>{const r=document.createElement('div');const d=document.createElement('span');d.className='d';d.style.background='#'+z.color.hex;
     const t=document.createElement('span');t.innerHTML='';const b=document.createElement('b');b.textContent=z.name+': ';t.append(b,document.createTextNode(z.color.setName+' '+z.color.code+(z.color.name?' ('+z.color.name+')':'')));r.append(d,t);el.appendChild(r);});
   if(!el.children.length)el.textContent='아직 칠한 색이 없어요';}
@@ -984,7 +1008,10 @@ if(DESK){$('provSiwc').classList.remove('hidden');siwcRefresh();
     await siwcRefresh();if(siwcOn&&!r.data.sharing)$('siwcState').textContent+='\n⚠ 플랜 사용이 허용되지 않았어요. 다시 로그인해 "플랜 사용"을 허용해 주세요.';};
   $('siwcOut').onclick=async()=>{await DESK.chatgptSignOut();await siwcRefresh();toast('로그아웃했어요');};}
 let standalone=!(window.claude&&window.claude.use);
-function refreshAIBox(){if(typeof updateEraseMode==='function')updateEraseMode();const avail=!!aiSample||standalone;$('aibox').classList.toggle('hidden',!(avail&&step>=2));$('aiCfgBtn').classList.toggle('hidden',!standalone);
+function refreshAIBox(){if(typeof updateEraseMode==='function')updateEraseMode();const avail=!!aiSample||standalone;placeAIBox();
+  if(aiMode()&&step>=2&&step<=4&&!manualOpen){manualOpen=true;}
+  renderNav();
+  $('aibox').classList.toggle('hidden',!(avail&&(aiMode()?step===7:step>=2)));$('aiCfgBtn').classList.toggle('hidden',!standalone);
   if(standalone)$('aiGo').textContent=hasKey()?('AI에게 맡기기 ('+PROVIDERS[aiCfg.provider].name+')'):(DESK?'AI 사용하려면 ⚙ 설정 (ChatGPT 로그인 또는 키)':'AI 사용하려면 키 설정');}
 /* ---------- AI: colour chosen by the user first ---------- */
 let aiColor=null,pkSet=0,pkFam='all';
@@ -1070,14 +1097,17 @@ part 이름은 짧은 한국어(벽, 지붕, 창틀, 문, 1층 벽, 2층 벽 등
     aiSay(msg);if(code==='not_granted'||code==='sampling_disabled'){$('aibox').classList.add('hidden');aiSample=null;}
   }finally{$('aiGo').disabled=false;$('aiStop').classList.add('hidden');aiCtl=null;}
 }
+let aiSnap=null;
 async function execAI(res){
+  aiSnap={src:src.slice(),zones:zones.map(z=>Object.assign({},z,{mask:z.mask.slice()})),active};
+  const AIM=aiMode();
   const acts=Array.isArray(res.actions)?res.actions:[];const P=v=>Math.max(0,Math.min(999,Number(v)||0))/1000;
   let did=[],colored=false;
   const erases=acts.filter(a=>a&&a.type==='erase');
   for(const a of erases){redMask.fill(0);for(const b of (a.boxes||[])){if(!Array.isArray(b)||b.length<4)continue;
       const x0=Math.floor(P(b[0])*W),y0=Math.floor(P(b[1])*H),x1=Math.ceil(P(b[2])*W),y1=Math.ceil(P(b[3])*H);
       for(let y=Math.max(0,y0);y<=Math.min(H-1,y1);y++)for(let x=Math.max(0,x0);x<=Math.min(W-1,x1);x++)redMask[y*W+x]=1;}
-    if(step!==2){unlock(2);goStep(2);}render();aiSay('🧹 지우는 중이에요…');if(await eraseAuto())did.push('지우기');}
+    if(!AIM&&step!==2){unlock(2);goStep(2);}render();aiSay('🧹 지우는 중이에요…');if(await eraseAuto())did.push('지우기');}
   for(const a of acts.filter(a=>a&&a.type==='select')){const z=findZone(a.part);
     for(const pt of (a.points||[])){if(!Array.isArray(pt))continue;const x=Math.floor(P(pt[0])*W),y=Math.floor(P(pt[1])*H);
       const before=z.count;wand(x,y,false);stats(z);if(z.count>W*H*0.6){doUndo();stats(z);}}
@@ -1089,12 +1119,15 @@ async function execAI(res){
   // user picked a colour first but the AI only selected areas -> paint them with that colour
   if(aiColor&&!colored){for(const a of acts.filter(a=>a&&a.type==='select')){const z=findZone(a.part);stats(z);if(z.count){pushUndo();z.color=aiColor;colored=true;did.push(z.name+' → '+aiColor.code);}}}
   renderZones();updatePicked();
-  if(colored){unlock(3);unlock(4);unlock(5);goStep(4);}else if(did.some(d=>d.endsWith('선택'))){unlock(3);unlock(4);goStep(3);}
+  if(AIM){unlock(4);if(colored)unlock(5);goStep(7);$('aiUndo').disabled=false;}
+  else if(colored){unlock(3);unlock(4);unlock(5);goStep(4);}else if(did.some(d=>d.endsWith('선택'))){unlock(3);unlock(4);goStep(3);}
   render();
   const say=(typeof res.say==='string'?res.say:'')||'';
   aiSay((say?say+'\n':'')+(did.length?'✔ '+did.join(', '):'할 수 있는 동작을 찾지 못했어요. 조금 더 구체적으로 말씀해 주세요.'));
   $('aiq').value='';
 }
+$('aiUndo').onclick=()=>{if(!aiSnap)return;src=aiSnap.src;recalcLab(0,0,W,H);zones=aiSnap.zones;zones.forEach(z=>z.dirty=true);active=Math.min(aiSnap.active,zones.length-1);aiSnap=null;
+  $('aiUndo').disabled=true;renderZones();updatePicked();renderSummary('summary7');render();toast('AI가 한 것을 되돌렸어요');};
 goStep(1);
 </script>
 </body>
