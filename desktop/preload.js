@@ -2,6 +2,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('houseColorDesktop', {
+  comfyConfig: () => ipcRenderer.invoke('comfy:config'),
+  comfySetUrl: url => ipcRenderer.invoke('comfy:setUrl', url),
+  comfySetWorkflow: text => ipcRenderer.invoke('comfy:setWorkflow', text),
+  comfyTest: () => ipcRenderer.invoke('comfy:test'),
+  comfyRun: (imageB64, prompt, megapixels) => ipcRenderer.invoke('comfy:run', imageB64, prompt, megapixels),
+  comfyCancel: () => ipcRenderer.invoke('comfy:cancel'),
+  onComfyProgress: cb => { const h = (_e, p) => cb(p); ipcRenderer.on('comfy:progress', h); return () => ipcRenderer.removeListener('comfy:progress', h); },
+  relayStatus: () => ipcRenderer.invoke('relay:status'),
+  relayStart: () => ipcRenderer.invoke('relay:start'),
+  relayStop: () => ipcRenderer.invoke('relay:stop'),
+  relayRegenerate: () => ipcRenderer.invoke('relay:regenerate'),
   chatgptStatus: () => ipcRenderer.invoke('siwc:status'),
   chatgptSignIn: () => ipcRenderer.invoke('siwc:signIn'),
   chatgptSignOut: () => ipcRenderer.invoke('siwc:signOut'),

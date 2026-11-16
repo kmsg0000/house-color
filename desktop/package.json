@@ -20,7 +20,7 @@
     "appId": "kr.housecolor.app",
     "productName": "우리집 외벽 색 바꾸기",
     "artifactName": "HouseColor-Setup-${version}.${ext}",
-    "files": ["main.js", "preload.js", "siwc.js", "app/**/*", "icon.png"],
+    "files": ["main.js", "preload.js", "siwc.js", "comfy.js", "relay.js", "app/**/*", "icon.png"],
     "directories": { "output": "dist" },
     "win": { "target": "nsis", "icon": "icon.png" },
     "nsis": {

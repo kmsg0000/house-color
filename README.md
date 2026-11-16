@@ -5,6 +5,8 @@
 
 > **ChatGPT 안에서 쓰기(API 키 없이 ChatGPT 구독으로):** `chatgpt-app/README.md` 를 보세요.
 
+> **내 PC 의 ComfyUI(RTX 그래픽카드)로 무료 지우기 + 휴대폰 연결:** `docs/COMFYUI.md` · 테스트 체크리스트: `docs/TESTING.md`
+
 > 그냥 PC에서 바로 쓰고 싶다면: `web/index.html` 파일을 크롬이나 엣지로 열면(더블클릭) 설치 없이 바로 실행됩니다.
 
 ---
@@ -90,10 +92,21 @@ ChatGPT **Plus 또는 Pro** 구독이 있으면 키 없이 쓸 수 있습니다.
   ```
 - 웹 앱을 고쳤다면 `web/index.html` 을 바꾸면 됩니다 (자동 빌드 시 양쪽에 복사됨).
 
-## 서명 키에 대해
+## 서명 키에 대해 (APK)
 
-`android/app/release.keystore` 는 APK 서명용 키입니다. 같은 키로 서명해야 나중에 새 버전을 **업데이트로** 설치할 수 있으니 지우지 마세요.
-(비밀번호 `housecolor2026`. 저장소를 공개로 만들 경우 GitHub Secrets 에 `KEYSTORE_*` 값을 넣어 다른 키를 쓰는 것을 권장합니다)
+서명 키는 **저장소에 넣지 않고 GitHub Secrets 에만** 보관합니다. (2026-11-16 키 교체 — 이전 키는 공개되어 폐기)
+
+저장소 **Settings → Secrets and variables → Actions → New repository secret** 에 세 개를 등록합니다.
+
+| 이름 | 값 |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | 키 파일을 base64 로 바꾼 긴 문자열 |
+| `ANDROID_KEYSTORE_PASSWORD` | 키 비밀번호 |
+| `ANDROID_KEY_ALIAS` | 키 별칭 |
+
+- Secrets 가 없으면 자동 빌드는 **테스트용(debug) APK** 를 만듭니다(경고 표시). 이 APK 는 빌드할 때마다 서명이 달라 업데이트 설치가 안 됩니다.
+- 키 파일과 비밀번호는 안전한 곳에 따로 백업하세요. 잃어버리면 이후 버전을 업데이트로 설치할 수 없습니다.
+- 키를 바꾼 첫 버전은 휴대폰에서 기존 앱을 **한 번 지우고** 새로 설치해야 합니다.
 
 ## 알아 두기
 
