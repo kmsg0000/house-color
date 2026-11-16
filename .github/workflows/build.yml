@@ -6,6 +6,7 @@ name: 앱 만들기 (APK + PC 설치파일)
 on:
   push:
     branches: [ main, master ]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -26,11 +27,23 @@ jobs:
           gradle-version: '8.14.3'
       - name: 웹 앱 파일 넣기
         run: mkdir -p android/app/src/main/assets && cp web/index.html android/app/src/main/assets/index.html
-      - name: APK 빌드
-        working-directory: android
-        run: gradle assembleRelease --no-daemon
-      - name: 이름 정리
-        run: cp android/app/build/outputs/apk/release/app-release.apk HouseColor.apk
+      - name: APK 빌드 (서명 키는 GitHub Secrets 에서만 가져옴)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release.keystore"
+            (cd android && gradle assembleRelease --no-daemon)
+            cp android/app/build/outputs/apk/release/app-release.apk HouseColor.apk
+            rm -f "$RUNNER_TEMP/release.keystore"
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 비밀값이 없어 테스트용(debug) APK 를 만듭니다. 정식 배포 전 README 의 '서명 키' 절을 따라 Secrets 를 등록하세요."
+            (cd android && gradle assembleDebug --no-daemon)
+            cp android/app/build/outputs/apk/debug/app-debug.apk HouseColor.apk
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: HouseColor-android-apk
@@ -83,6 +96,7 @@ jobs:
 
   chatgpt-app:
     name: ChatGPT 앱 서버 배포
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,6 +122,7 @@ jobs:
   release:
     name: 내려받기 페이지(Releases) 만들기
     needs: [ android, windows, mac ]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

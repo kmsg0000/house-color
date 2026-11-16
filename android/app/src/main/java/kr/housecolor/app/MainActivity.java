@@ -30,6 +30,16 @@ import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewClientCompat;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.concurrent.ConcurrentHashMap;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
@@ -50,6 +60,7 @@ public class MainActivity extends AppCompatActivity {
     private ActivityResultLauncher<String> cameraPermLauncher;
     private ActivityResultLauncher<String> storagePermLauncher;
     private String pendingB64, pendingName;
+    private final ConcurrentHashMap<String, String> httpBodies = new ConcurrentHashMap<>();
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
@@ -97,6 +108,9 @@ public class MainActivity extends AppCompatActivity {
         ws.setAllowContentAccess(true);
         ws.setTextZoom(100);
         ws.setMediaPlaybackRequiresUserGesture(true);
+        // 같은 Wi-Fi 의 PC(ComfyUI 중계, http://192.168.x.x:8766)에 접속하기 위해 필요.
+        // 앱은 사용자가 설정에 직접 입력한 주소에만 요청하며, 중계 서버는 접근 토큰을 요구한다.
+        ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
         webView.setWebViewClient(new WebViewClientCompat() {
             @Override
@@ -176,7 +190,7 @@ public class MainActivity extends AppCompatActivity {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ContentValues v = new ContentValues();
                 v.put(MediaStore.Images.Media.DISPLAY_NAME, name);
-                v.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                v.put(MediaStore.Images.Media.MIME_TYPE, name.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg");
                 v.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/외벽색바꾸기");
                 Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
                 if (uri == null) return false;
@@ -189,7 +203,7 @@ public class MainActivity extends AppCompatActivity {
                 if (!dir.exists()) dir.mkdirs();
                 File f = new File(dir, name);
                 try (FileOutputStream fos = new FileOutputStream(f)) { fos.write(bytes); }
-                MediaScannerConnection.scanFile(this, new String[]{f.getAbsolutePath()}, new String[]{"image/jpeg"}, null);
+                MediaScannerConnection.scanFile(this, new String[]{f.getAbsolutePath()}, new String[]{name.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg"}, null);
             }
             return true;
         } catch (Exception e) {
@@ -201,8 +215,71 @@ public class MainActivity extends AppCompatActivity {
         runOnUiThread(() -> Toast.makeText(this, m, Toast.LENGTH_LONG).show());
     }
 
+    /** 같은 Wi-Fi(사설망) 주소인지 확인 — PC 중계 서버 외의 곳으로는 요청하지 않는다 */
+    private static boolean isLanHost(String host) {
+        try {
+            for (InetAddress a : InetAddress.getAllByName(host)) {
+                if (!(a.isSiteLocalAddress() || a.isLoopbackAddress() || a.isLinkLocalAddress())) return false;
+            }
+            return true;
+        } catch (Exception e) { return false; }
+    }
+
+    private static String readAll(InputStream is) throws java.io.IOException {
+        if (is == null) return "";
+        ByteArrayOutputStream bo = new ByteArrayOutputStream();
+        byte[] buf = new byte[65536]; int n;
+        while ((n = is.read(buf)) > 0) bo.write(buf, 0, n);
+        is.close();
+        return bo.toString("UTF-8");
+    }
+
     /** 웹 페이지에서 window.AndroidBridge.saveImage(base64, 파일이름) 으로 부른다 */
     class Bridge {
+        /**
+         * PC(ComfyUI 중계)로 HTTP 요청. WebView 의 CORS/로컬 네트워크 제한을 피하려고 네이티브로 보낸다.
+         * 끝나면 window.__hcHttpDone(id, status) 를 부르고, 본문은 takeHttpBody(id) 로 가져간다.
+         */
+        @JavascriptInterface
+        public void httpRequest(final String id, final String method, final String url, final String headersJson, final String body) {
+            new Thread(() -> {
+                int status; String resp;
+                try {
+                    URL u = new URL(url);
+                    if (!"http".equals(u.getProtocol()) && !"https".equals(u.getProtocol())) throw new Exception("http 주소만 쓸 수 있어요");
+                    if (!isLanHost(u.getHost())) throw new Exception("같은 Wi-Fi(사설망) 주소만 연결할 수 있어요");
+                    HttpURLConnection c = (HttpURLConnection) u.openConnection();
+                    c.setRequestMethod("POST".equals(method) ? "POST" : "GET");
+                    c.setConnectTimeout(8000);
+                    c.setReadTimeout(20 * 60 * 1000);
+                    c.setInstanceFollowRedirects(false);
+                    JSONObject h = new JSONObject(headersJson == null || headersJson.isEmpty() ? "{}" : headersJson);
+                    for (Iterator<String> it = h.keys(); it.hasNext(); ) { String k = it.next(); c.setRequestProperty(k, h.getString(k)); }
+                    if (body != null && !body.isEmpty() && "POST".equals(method)) {
+                        byte[] b = body.getBytes(StandardCharsets.UTF_8);
+                        c.setDoOutput(true);
+                        c.setFixedLengthStreamingMode(b.length);
+                        try (java.io.OutputStream os = c.getOutputStream()) { os.write(b); }
+                    }
+                    status = c.getResponseCode();
+                    resp = readAll(status >= 400 ? c.getErrorStream() : c.getInputStream());
+                    c.disconnect();
+                } catch (Exception e) {
+                    status = -1;
+                    resp = "{\"error\":" + JSONObject.quote(String.valueOf(e.getMessage())) + "}";
+                }
+                httpBodies.put(id, resp);
+                final int st = status;
+                runOnUiThread(() -> webView.evaluateJavascript("window.__hcHttpDone&&window.__hcHttpDone(" + JSONObject.quote(id) + "," + st + ")", null));
+            }).start();
+        }
+
+        @JavascriptInterface
+        public String takeHttpBody(String id) {
+            String s = httpBodies.remove(id);
+            return s == null ? "" : s;
+        }
+
         @JavascriptInterface
         public boolean saveImage(String b64, String name) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q

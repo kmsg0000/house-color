@@ -14,20 +14,24 @@ android {
         versionName '1.0.0'
     }
 
+    // 서명 키는 저장소에 두지 않는다. GitHub Secrets → CI 가 환경변수로 넘긴다.
+    //   ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS (키 비밀번호는 저장소 비밀번호와 같게 생성)
+    def ksPath = System.getenv('ANDROID_KEYSTORE_PATH')
     signingConfigs {
-        // 같은 키로 계속 서명해야 나중에 새 버전을 '업데이트'로 설치할 수 있다.
-        // 저장소에 포함된 release.keystore 를 기본으로 쓰고, GitHub 비밀값(KEYSTORE_*)이 있으면 그것을 쓴다.
-        rel {
-            storeFile file(System.getenv('KEYSTORE_PATH') ?: 'release.keystore')
-            storePassword System.getenv('KEYSTORE_PASSWORD') ?: 'housecolor2026'
-            keyAlias System.getenv('KEY_ALIAS') ?: 'housecolor'
-            keyPassword System.getenv('KEY_PASSWORD') ?: 'housecolor2026'
+        if (ksPath) {
+            rel {
+                storeFile file(ksPath)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            }
         }
     }
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.rel
+            // 키가 없으면 서명하지 않은 release 를 만들지 않도록 CI 에서 debug 빌드로 대체한다
+            if (ksPath) signingConfig signingConfigs.rel
         }
     }
     compileOptions {
